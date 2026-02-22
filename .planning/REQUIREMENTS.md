@@ -74,32 +74,32 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SPLT-01 | — | Pending |
-| SPLT-02 | — | Pending |
-| SPLT-03 | — | Pending |
-| SPLT-04 | — | Pending |
-| SPLT-05 | — | Pending |
-| SPLT-06 | — | Pending |
-| VID-01 | — | Pending |
-| VID-02 | — | Pending |
-| VID-03 | — | Pending |
-| VID-04 | — | Pending |
-| LOG-01 | — | Pending |
-| LOG-02 | — | Pending |
-| LOG-03 | — | Pending |
-| LOG-04 | — | Pending |
-| HIST-01 | — | Pending |
-| HIST-02 | — | Pending |
-| HIST-03 | — | Pending |
-| HIST-04 | — | Pending |
-| UI-01 | — | Pending |
-| UI-02 | — | Pending |
+| SPLT-01 | Phase 1 | Pending |
+| SPLT-02 | Phase 1 | Pending |
+| SPLT-03 | Phase 1 | Pending |
+| SPLT-04 | Phase 1 | Pending |
+| SPLT-05 | Phase 1 | Pending |
+| SPLT-06 | Phase 1 | Pending |
+| VID-01 | Phase 2 | Pending |
+| VID-02 | Phase 2 | Pending |
+| VID-03 | Phase 2 | Pending |
+| VID-04 | Phase 2 | Pending |
+| LOG-01 | Phase 3 | Pending |
+| LOG-02 | Phase 3 | Pending |
+| LOG-03 | Phase 3 | Pending |
+| LOG-04 | Phase 3 | Pending |
+| HIST-01 | Phase 4 | Pending |
+| HIST-02 | Phase 4 | Pending |
+| HIST-03 | Phase 4 | Pending |
+| HIST-04 | Phase 4 | Pending |
+| UI-01 | Phase 1 | Pending |
+| UI-02 | Phase 1 | Pending |
 
 **Coverage:**
 - v1 requirements: 20 total
-- Mapped to phases: 0
-- Unmapped: 20 ⚠️ (roadmap not yet created)
+- Mapped to phases: 20
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-02-22*
-*Last updated: 2026-02-22 after initial definition*
+*Last updated: 2026-02-22 after roadmap creation*
