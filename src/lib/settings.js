@@ -4,17 +4,22 @@
 
 const KEY = 'trainapp:settings:v1'
 
+// Bump when you change DEFAULTS.defaultPattern and want existing
+// installs to pick up the new pattern automatically.
+const PATTERN_VERSION = 2
+
 const DEFAULTS = {
   appsScriptUrl: '',   // e.g. https://script.google.com/macros/s/XXX/exec
   password: '',        // matches SHEET_PASSWORD in your Apps Script
+  patternVersion: PATTERN_VERSION,
   defaultPattern: {    // weekday → workout_type. 0 = Sunday.
-    0: 'Rest',
-    1: 'Upper A',
-    2: 'Lower A',
-    3: 'Rest',
-    4: 'Upper B',
-    5: 'Lower B',
-    6: 'Rest',
+    0: 'Upper A',      // Sun
+    1: 'Lower A',      // Mon
+    2: 'Rest',         // Tue
+    3: 'Upper B',      // Wed
+    4: 'Lower B',      // Thu
+    5: 'Rest',         // Fri
+    6: 'Rest',         // Sat
   },
   // Override specific calendar dates: { 'YYYY-MM-DD': 'Upper A' | 'Rest' | ... }
   dayOverrides: {},
@@ -25,12 +30,23 @@ export function getSettings() {
     const raw = localStorage.getItem(KEY)
     if (!raw) return { ...DEFAULTS }
     const parsed = JSON.parse(raw)
-    return {
+
+    // One-shot migration: if the stored pattern predates PATTERN_VERSION,
+    // overwrite it with the new defaults. Keeps URL + password + overrides.
+    const needsMigration = (parsed.patternVersion || 0) < PATTERN_VERSION
+    const merged = {
       ...DEFAULTS,
       ...parsed,
-      defaultPattern: { ...DEFAULTS.defaultPattern, ...(parsed.defaultPattern || {}) },
+      defaultPattern: needsMigration
+        ? { ...DEFAULTS.defaultPattern }
+        : { ...DEFAULTS.defaultPattern, ...(parsed.defaultPattern || {}) },
       dayOverrides: { ...(parsed.dayOverrides || {}) },
+      patternVersion: PATTERN_VERSION,
     }
+    if (needsMigration) {
+      localStorage.setItem(KEY, JSON.stringify(merged))
+    }
+    return merged
   } catch {
     return { ...DEFAULTS }
   }

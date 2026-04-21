@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react'
 import { ChevronLeft, ChevronRight, Settings as SettingsIcon, Pencil, Check, RefreshCw } from 'lucide-react'
 import { getSettings, workoutTypeForDate, toISODate, isConfigured } from '../../lib/settings'
 import { useSheetData, rowsByDate, lastSessionForType } from '../../lib/useSheetData'
+import useAppStore from '../../store/useAppStore'
 import SettingsModal from '../settings/SettingsModal'
 import DayAssignSheet from './DayAssignSheet'
 import LastSessionBanner from './LastSessionBanner'
@@ -208,6 +209,7 @@ function DayCell({ date, inMonth, workoutType, hasData, isToday, isSelected, edi
 
 // ─── Selected day card ──────────────────────────────────────────────
 function SelectedDayCard({ selectedISO, workoutType, loggedRows }) {
+  const openQuickLog = useAppStore(s => s.openQuickLog)
   const date = isoToDate(selectedISO)
   const isToday = selectedISO === toISODate(new Date())
   const isFuture = date.getTime() > new Date().setHours(23,59,59,999)
@@ -219,6 +221,7 @@ function SelectedDayCard({ selectedISO, workoutType, loggedRows }) {
 
   const uniqueExercises = [...new Set(loggedRows.map(r => r.exercise))]
   const setCount = loggedRows.length
+  const hasLog = setCount > 0
 
   return (
     <div className="bg-bg-1 border border-bg-3 rounded-2xl p-4 mt-3">
@@ -238,7 +241,7 @@ function SelectedDayCard({ selectedISO, workoutType, loggedRows }) {
         <p className="text-txt-secondary text-sm mt-3">Rest day. Recover.</p>
       ) : (
         <>
-          {loggedRows.length > 0 ? (
+          {hasLog ? (
             <div className="mt-3 space-y-1">
               <div className="text-xs text-txt-muted">
                 {setCount} sets logged · {uniqueExercises.length} exercises
@@ -254,18 +257,17 @@ function SelectedDayCard({ selectedISO, workoutType, loggedRows }) {
 
           <div className="flex gap-2 mt-4">
             <button
-              disabled
-              title="Coming next"
-              className="flex-1 bg-bg-2 text-txt-muted text-sm font-semibold rounded-lg py-2.5 cursor-not-allowed border border-bg-3"
+              onClick={() => openQuickLog(selectedISO)}
+              className="flex-1 bg-accent hover:bg-accent-dark text-white text-sm font-semibold rounded-lg py-2.5"
             >
-              Quick Log (soon)
+              {hasLog ? 'Edit Quick Log' : 'Quick Log'}
             </button>
             <button
               disabled
               title="Coming next"
-              className="flex-1 bg-accent/40 text-white/60 text-sm font-semibold rounded-lg py-2.5 cursor-not-allowed"
+              className="flex-1 bg-bg-2 text-txt-muted text-sm font-semibold rounded-lg py-2.5 cursor-not-allowed border border-bg-3"
             >
-              Start {workoutType} (soon)
+              Start Session (soon)
             </button>
           </div>
         </>

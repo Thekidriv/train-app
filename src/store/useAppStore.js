@@ -6,14 +6,17 @@ const useAppStore = create(
   persist(
     (set, get) => ({
       // ─── Navigation ───────────────────────────────────────────────
-      view: 'calendar', // 'calendar' | 'splits' | 'workout' | 'history' | 'progress'
+      view: 'calendar', // 'calendar' | 'quicklog' | 'splits' | 'workout' | 'history' | 'progress'
       activeSplitId: null,
       activeDayIndex: null,
       activeSessionId: null,
       sidebarOpen: true,
+      // ISO date (YYYY-MM-DD) that Quick Log should open against
+      quickLogISO: null,
 
       setView: (view) => set({ view }),
       setSidebarOpen: (open) => set({ sidebarOpen: open }),
+      openQuickLog: (iso) => set({ quickLogISO: iso, view: 'quicklog' }),
 
       // ─── Splits ───────────────────────────────────────────────────
       splits: [],

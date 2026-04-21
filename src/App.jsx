@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import Header from './components/layout/Header'
 import BottomNav from './components/layout/BottomNav'
 import CalendarHome from './components/calendar/CalendarHome'
+import QuickLog from './components/quicklog/QuickLog'
 import SplitList from './components/splits/SplitList'
 import SplitBuilder from './components/splits/SplitBuilder'
 import WorkoutSession from './components/logging/WorkoutSession'
@@ -18,6 +19,7 @@ export default function App() {
       <Header />
       <main className="flex-1 overflow-hidden flex flex-col">
         {view === 'calendar' && <CalendarHome />}
+        {view === 'quicklog' && <QuickLog />}
         {view === 'splits' && (
           selectedSplit
             ? <SplitBuilder split={selectedSplit} onBack={() => setSelectedSplit(null)} />

@@ -136,10 +136,9 @@ export function logSet({ date, workout_type, exercise, set_num, weight_kg, reps,
 }
 
 /**
- * Save many sets sequentially. Returns { succeeded, failed } counts.
- * The existing doPost is append-only (no upsert), so re-saving the same
- * session will create duplicate rows. TODO: when we ship the upsert-capable
- * doPost upgrade, switch saveSession to use it.
+ * Save many sets sequentially using the legacy single-row POST.
+ * Append-only — will create duplicate rows if re-run for the same session.
+ * Prefer saveSessionBatch once the Apps Script upgrade is deployed.
  */
 export async function saveSession(rows) {
   let succeeded = 0
@@ -153,4 +152,92 @@ export async function saveSession(rows) {
     }
   }
   return { succeeded, failed: failures.length, failures }
+}
+
+/**
+ * Save a whole session in one request using the upsert-capable doPost
+ * (see APPS_SCRIPT_DEPLOY.md). Re-saving the same day updates existing
+ * rows instead of appending duplicates.
+ *
+ * Key: date|workout_type|exercise|set_num.
+ * Auto-falls-back to sequential postOne() if the server returns a
+ * "unknown action" error (i.e. script hasn't been upgraded yet).
+ */
+export async function saveSessionBatch(rows) {
+  const url = requireUrl()
+  const secret = requirePassword()
+  const body = {
+    secret,
+    action: 'upsert',
+    upsertKey: 'date|workout_type|exercise|set_num',
+    rows,
+  }
+
+  let res, text
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(body),
+      redirect: 'follow',
+    })
+    text = await res.text()
+  } catch (e) {
+    throw new Error('Network error: ' + e.message)
+  }
+
+  // Try JSON first (upgraded script)
+  try {
+    const data = JSON.parse(text)
+    if (data.ok === true) {
+      return {
+        ok: true,
+        mode: 'upsert',
+        updated: data.updated || 0,
+        appended: data.appended || 0,
+      }
+    }
+    if (data.ok === false) {
+      // If script rejects the action, fall back to per-row legacy posts.
+      if (/unknown action/i.test(data.error || '')) {
+        return fallbackLegacy(rows)
+      }
+      throw new Error(data.error || 'Save failed')
+    }
+  } catch (e) {
+    if (e instanceof SyntaxError) {
+      // Not JSON. Old script likely returned "OK" or "unauthorized".
+      if (text.trim() === 'OK') {
+        // Old script only stored the FIRST row. Resend the rest one-by-one.
+        const [, ...rest] = rows
+        const tail = await fallbackLegacy(rest)
+        return {
+          ok: tail.ok,
+          mode: 'legacy-fallback',
+          succeeded: 1 + tail.succeeded,
+          failed: tail.failed,
+          failures: tail.failures,
+        }
+      }
+      if (text.toLowerCase().includes('unauthorized')) {
+        throw new Error('Unauthorized — check password in Settings.')
+      }
+      throw new Error('Unexpected response: ' + text.slice(0, 140))
+    }
+    throw e
+  }
+}
+
+async function fallbackLegacy(rows) {
+  let succeeded = 0
+  const failures = []
+  for (const r of rows) {
+    try {
+      await postOne(r)
+      succeeded++
+    } catch (e) {
+      failures.push({ row: r, error: e.message })
+    }
+  }
+  return { ok: failures.length === 0, mode: 'legacy', succeeded, failed: failures.length, failures }
 }
