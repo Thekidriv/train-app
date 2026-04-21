@@ -1,13 +1,21 @@
 // src/components/session/GuidedSession.jsx
 // Guided Workout: one exercise at a time, big Log-Set button, auto rest
-// timer (Main=3min, Superset=75s) with a red ring under 10s. State is
-// persisted to localStorage so closing the app doesn't lose progress.
+// timer (Main=3min, Superset=75s) with a red ring under 10s, plus a
+// running total-workout clock in the top bar. State is persisted to
+// localStorage so closing the app doesn't lose progress.
+//
+// While a session is active we:
+//   1. Acquire a Screen Wake Lock so the phone won't auto-lock (iOS 16.4+).
+//   2. Play a short beep when the rest timer ends (even if the screen is
+//      elsewhere, as long as the app is still in the foreground — iOS
+//      throttles audio in background, which is an OS limitation).
+//
 // On Finish, all logged sets are committed in a single upsert call.
 
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowLeft, ChevronLeft, ChevronRight, Check, SkipForward,
-  Play, Flag, Loader2, Trash2, Plus, AlertCircle, CheckCircle2,
+  Flag, Loader2, Trash2, Plus, AlertCircle, CheckCircle2, Timer,
 } from 'lucide-react'
 import { exercisesFor, titleFor } from '../../lib/program'
 import { workoutTypeForDate, toISODate } from '../../lib/settings'
@@ -15,8 +23,8 @@ import { saveSessionBatch } from '../../lib/sheets'
 import { useSheetData } from '../../lib/useSheetData'
 import useAppStore from '../../store/useAppStore'
 
-const REST_MAIN = 180     // 3 min
-const REST_SUPERSET = 75  // 75s
+const REST_MAIN = 180     // 3 min for main lifts
+const REST_SUPERSET = 75  // 75s within supersets
 
 export default function GuidedSession() {
   const sessionISO = useAppStore(s => s.sessionISO) || toISODate(new Date())
@@ -27,7 +35,7 @@ export default function GuidedSession() {
   const workoutType = workoutTypeForDate(date)
   const exercises = exercisesFor(workoutType)
 
-  // Last-session prefill per exercise for this workout_type
+  // Last-session prefill per exercise
   const lastByExercise = useMemo(() => {
     const candidates = rows.filter(r =>
       String(r.workout_type) === workoutType &&
@@ -51,17 +59,27 @@ export default function GuidedSession() {
 
   const storageKey = `trainapp:session:${sessionISO}:${workoutType}`
 
-  const [state, setState] = useState(() => loadOrBuild(storageKey, exercises, lastByExercise))
-  const [currentIdx, setCurrentIdx] = useState(0)
-  const [rest, setRest] = useState(null) // { duration, startedAt }
+  // Initial load — returns { state, currentIdx, startedAt }
+  const [loaded] = useState(() => loadOrBuild(storageKey, exercises, lastByExercise))
+  const [state, setState] = useState(loaded.state)
+  const [currentIdx, setCurrentIdx] = useState(loaded.currentIdx)
+  const [startedAt] = useState(loaded.startedAt)
+
+  const [rest, setRest] = useState(null)
   const [finishing, setFinishing] = useState(false)
   const [result, setResult] = useState(null)
 
-  // Persist on every state change
+  // Persist
   useEffect(() => {
     if (!state) return
-    try { localStorage.setItem(storageKey, JSON.stringify({ state, currentIdx })) } catch {}
-  }, [state, currentIdx, storageKey])
+    try {
+      localStorage.setItem(storageKey, JSON.stringify({ state, currentIdx, startedAt }))
+    } catch {}
+  }, [state, currentIdx, startedAt, storageKey])
+
+  // ─── Screen Wake Lock ────────────────────────────────────────
+  // Keep the phone from auto-locking while a session is active.
+  useWakeLock(exercises.length > 0)
 
   if (!exercises.length) {
     return (
@@ -101,16 +119,13 @@ export default function GuidedSession() {
 
   const logSet = (setIdx) => {
     const st = current.sets[setIdx]
-    if (!st.weight_kg && !st.reps) return // require at least one value
+    if (!st.weight_kg && !st.reps) return
     updateSet(setIdx, { logged: true, timestamp: Date.now() })
-    // Auto-start rest timer
     const dur = restDurationFor(current.group)
     setRest({ duration: dur, startedAt: Date.now() })
   }
 
-  const unlogSet = (setIdx) => {
-    updateSet(setIdx, { logged: false })
-  }
+  const unlogSet = (setIdx) => updateSet(setIdx, { logged: false })
 
   const addSet = () => {
     setState(s => {
@@ -169,7 +184,7 @@ export default function GuidedSession() {
       })
     }
     if (!flat.length) {
-      setResult({ ok: false, error: 'No sets logged yet — tap "Log Set" on at least one set first.' })
+      setResult({ ok: false, error: 'No sets logged yet — tap "Log" on at least one set first.' })
       setFinishing(false)
       return
     }
@@ -193,7 +208,7 @@ export default function GuidedSession() {
   return (
     <div className="flex-1 flex flex-col min-h-0">
       {/* Top bar */}
-      <div className="flex items-center gap-2 px-4 py-2.5 bg-bg-1 border-b border-bg-3 flex-shrink-0">
+      <div className="flex items-center gap-2 px-4 py-2 bg-bg-1 border-b border-bg-3 flex-shrink-0">
         <button
           onClick={endGuidedSession}
           className="p-1 -ml-1 text-txt-secondary hover:text-white"
@@ -205,9 +220,15 @@ export default function GuidedSession() {
           <div className="text-[10px] text-txt-muted uppercase tracking-wider">{fmt}</div>
           <div className="text-white font-bold text-sm truncate">{titleFor(workoutType)}</div>
         </div>
-        <div className="text-[11px] text-txt-muted whitespace-nowrap">
-          {totalLogged}/{totalPlanned}
-        </div>
+        <WorkoutClock startedAt={startedAt} />
+      </div>
+
+      {/* Progress bar */}
+      <div className="h-1 bg-bg-2 flex-shrink-0">
+        <div
+          className="h-full bg-accent transition-all"
+          style={{ width: `${totalPlanned ? (totalLogged / totalPlanned) * 100 : 0}%` }}
+        />
       </div>
 
       {/* Exercise pager */}
@@ -240,7 +261,6 @@ export default function GuidedSession() {
 
       {/* Body */}
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
-        {/* Exercise card */}
         <div className="bg-bg-1 border border-bg-3 rounded-2xl p-4">
           <h2 className="text-white font-bold text-lg leading-tight">{current.exerciseName}</h2>
           <div className="text-[12px] text-txt-secondary mt-1 tabular-nums">
@@ -262,7 +282,6 @@ export default function GuidedSession() {
           )}
         </div>
 
-        {/* Set tracker */}
         <div className="space-y-2">
           {current.sets.map((st, i) => (
             <SetCard
@@ -331,7 +350,6 @@ export default function GuidedSession() {
         )}
       </div>
 
-      {/* Rest timer overlay */}
       {rest && (
         <RestTimerOverlay
           key={rest.startedAt}
@@ -340,6 +358,25 @@ export default function GuidedSession() {
           onSkip={() => setRest(null)}
         />
       )}
+    </div>
+  )
+}
+
+// ─── Top-right running workout clock ───────────────────────────
+
+function WorkoutClock({ startedAt }) {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(id)
+  }, [])
+  const elapsedSec = Math.max(0, Math.floor((now - startedAt) / 1000))
+  return (
+    <div className="flex items-center gap-1.5 bg-bg-2 border border-bg-3 rounded-full px-2.5 py-1">
+      <Timer size={12} className="text-accent-light" />
+      <span className="text-[12px] font-bold text-white tabular-nums whitespace-nowrap">
+        {formatClock(elapsedSec)}
+      </span>
     </div>
   )
 }
@@ -381,7 +418,7 @@ function SetCard({ num, row, onChange, onLog, onUnlog, onRemove }) {
         {row.logged ? (
           <button
             onClick={onUnlog}
-            className="px-2 py-1 text-[11px] text-success-light/80 hover:text-white"
+            className="px-2 py-1 text-[11px] text-white/70 hover:text-white"
             aria-label="Undo log"
           >
             Undo
@@ -427,20 +464,32 @@ function NumInput({ value, onChange, placeholder, disabled }) {
   )
 }
 
-// ─── Rest timer overlay ───────────────────────────────────────
+// ─── Rest timer overlay + beep ────────────────────────────────
 
 function RestTimerOverlay({ duration, onDone, onSkip }) {
   const [remaining, setRemaining] = useState(duration)
   const startedRef = useRef(Date.now())
+  const beepedRef = useRef(false)
 
   useEffect(() => {
-    if (remaining <= 0) { onDone(); return }
+    if (remaining <= 0) {
+      if (!beepedRef.current) {
+        beepedRef.current = true
+        playRestEndBeep()
+      }
+      onDone()
+      return
+    }
     const id = setInterval(() => {
       const elapsed = (Date.now() - startedRef.current) / 1000
       const left = Math.max(0, duration - elapsed)
       setRemaining(Math.ceil(left))
       if (left <= 0) {
         clearInterval(id)
+        if (!beepedRef.current) {
+          beepedRef.current = true
+          playRestEndBeep()
+        }
         onDone()
       }
     }, 250)
@@ -462,9 +511,7 @@ function RestTimerOverlay({ duration, onDone, onSkip }) {
   return (
     <div className="fixed inset-0 z-40 bg-black/80 backdrop-blur-sm flex items-center justify-center p-6">
       <div className="flex flex-col items-center">
-        <div className="text-[11px] uppercase tracking-widest text-txt-muted mb-3">
-          Rest
-        </div>
+        <div className="text-[11px] uppercase tracking-widest text-txt-muted mb-3">Rest</div>
         <div className="relative">
           <svg width="160" height="160" viewBox="0 0 160 160">
             <circle cx="80" cy="80" r={r} stroke="#272727" strokeWidth="6" fill="none" />
@@ -479,12 +526,7 @@ function RestTimerOverlay({ duration, onDone, onSkip }) {
             />
           </svg>
           <div className="absolute inset-0 flex items-center justify-center">
-            <span
-              className="text-4xl font-bold tabular-nums"
-              style={{ color }}
-            >
-              {fmt}
-            </span>
+            <span className="text-4xl font-bold tabular-nums" style={{ color }}>{fmt}</span>
           </div>
         </div>
         <button
@@ -498,6 +540,83 @@ function RestTimerOverlay({ duration, onDone, onSkip }) {
   )
 }
 
+// Reuse one AudioContext per page so we don't leak on every rest end.
+let sharedAudioCtx = null
+function getAudioCtx() {
+  if (sharedAudioCtx) return sharedAudioCtx
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext
+    if (!AC) return null
+    sharedAudioCtx = new AC()
+  } catch { return null }
+  return sharedAudioCtx
+}
+
+function playRestEndBeep() {
+  const ctx = getAudioCtx()
+  if (!ctx) return
+  // iOS: may be suspended until user gesture. Tapping "Log" already counts as one.
+  if (ctx.state === 'suspended') ctx.resume().catch(() => {})
+  // Triple rising beep: pleasant, unmistakable.
+  const beep = (t, freq) => {
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.connect(gain); gain.connect(ctx.destination)
+    osc.frequency.value = freq
+    osc.type = 'sine'
+    const start = ctx.currentTime + t
+    gain.gain.setValueAtTime(0.0001, start)
+    gain.gain.exponentialRampToValueAtTime(0.25, start + 0.02)
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.22)
+    osc.start(start); osc.stop(start + 0.25)
+  }
+  beep(0.00, 660)
+  beep(0.22, 880)
+  beep(0.44, 1100)
+  // Also vibrate on devices that support it (Android; no-op on iOS).
+  try { navigator.vibrate?.([120, 60, 120]) } catch {}
+}
+
+// ─── Screen Wake Lock ──────────────────────────────────────────
+
+function useWakeLock(active) {
+  const lockRef = useRef(null)
+  useEffect(() => {
+    if (!active || typeof navigator === 'undefined' || !('wakeLock' in navigator)) return
+    let cancelled = false
+
+    const acquire = async () => {
+      try {
+        const lock = await navigator.wakeLock.request('screen')
+        if (cancelled) { lock.release().catch(() => {}); return }
+        lockRef.current = lock
+        lock.addEventListener('release', () => {
+          // System can drop the lock when tab is hidden; we'll re-acquire on focus.
+          lockRef.current = null
+        })
+      } catch {
+        // Unsupported / denied — silently no-op.
+      }
+    }
+
+    acquire()
+
+    const onVis = () => {
+      if (document.visibilityState === 'visible' && !lockRef.current) acquire()
+    }
+    document.addEventListener('visibilitychange', onVis)
+
+    return () => {
+      cancelled = true
+      document.removeEventListener('visibilitychange', onVis)
+      if (lockRef.current) {
+        lockRef.current.release().catch(() => {})
+        lockRef.current = null
+      }
+    }
+  }, [active])
+}
+
 // ─── Helpers ──────────────────────────────────────────────────
 
 function loadOrBuild(storageKey, exercises, lastByExercise) {
@@ -505,10 +624,20 @@ function loadOrBuild(storageKey, exercises, lastByExercise) {
     const raw = localStorage.getItem(storageKey)
     if (raw) {
       const parsed = JSON.parse(raw)
-      if (parsed?.state && Array.isArray(parsed.state)) return parsed.state
+      if (parsed?.state && Array.isArray(parsed.state)) {
+        return {
+          state: parsed.state,
+          currentIdx: parsed.currentIdx || 0,
+          startedAt: parsed.startedAt || Date.now(),
+        }
+      }
     }
   } catch {}
-  return buildFresh(exercises, lastByExercise)
+  return {
+    state: buildFresh(exercises, lastByExercise),
+    currentIdx: 0,
+    startedAt: Date.now(),
+  }
 }
 
 function buildFresh(exercises, lastByExercise) {
@@ -537,6 +666,14 @@ function buildFresh(exercises, lastByExercise) {
 
 function restDurationFor(group) {
   return /superset/i.test(group) ? REST_SUPERSET : REST_MAIN
+}
+
+function formatClock(totalSec) {
+  const h = Math.floor(totalSec / 3600)
+  const m = Math.floor((totalSec % 3600) / 60)
+  const s = totalSec % 60
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+  return `${m}:${String(s).padStart(2, '0')}`
 }
 
 function isBlank(v) { return v == null || v === '' }
