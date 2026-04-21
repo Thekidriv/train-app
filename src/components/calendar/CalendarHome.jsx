@@ -210,6 +210,7 @@ function DayCell({ date, inMonth, workoutType, hasData, isToday, isSelected, edi
 // ─── Selected day card ──────────────────────────────────────────────
 function SelectedDayCard({ selectedISO, workoutType, loggedRows }) {
   const openQuickLog = useAppStore(s => s.openQuickLog)
+  const startGuidedSession = useAppStore(s => s.startGuidedSession)
   const date = isoToDate(selectedISO)
   const isToday = selectedISO === toISODate(new Date())
   const isFuture = date.getTime() > new Date().setHours(23,59,59,999)
@@ -258,16 +259,15 @@ function SelectedDayCard({ selectedISO, workoutType, loggedRows }) {
           <div className="flex gap-2 mt-4">
             <button
               onClick={() => openQuickLog(selectedISO)}
-              className="flex-1 bg-accent hover:bg-accent-dark text-white text-sm font-semibold rounded-lg py-2.5"
+              className="flex-1 bg-bg-2 hover:bg-bg-3 text-white text-sm font-semibold rounded-lg py-2.5 border border-bg-3"
             >
               {hasLog ? 'Edit Quick Log' : 'Quick Log'}
             </button>
             <button
-              disabled
-              title="Coming next"
-              className="flex-1 bg-bg-2 text-txt-muted text-sm font-semibold rounded-lg py-2.5 cursor-not-allowed border border-bg-3"
+              onClick={() => startGuidedSession(selectedISO)}
+              className="flex-1 bg-accent hover:bg-accent-dark text-white text-sm font-semibold rounded-lg py-2.5"
             >
-              Start Session (soon)
+              Start Session
             </button>
           </div>
         </>

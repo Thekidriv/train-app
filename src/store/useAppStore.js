@@ -11,12 +11,15 @@ const useAppStore = create(
       activeDayIndex: null,
       activeSessionId: null,
       sidebarOpen: true,
-      // ISO date (YYYY-MM-DD) that Quick Log should open against
+      // ISO date (YYYY-MM-DD) that Quick Log / Guided Session should open against
       quickLogISO: null,
+      sessionISO: null,
 
       setView: (view) => set({ view }),
       setSidebarOpen: (open) => set({ sidebarOpen: open }),
       openQuickLog: (iso) => set({ quickLogISO: iso, view: 'quicklog' }),
+      startGuidedSession: (iso) => set({ sessionISO: iso, view: 'workout' }),
+      endGuidedSession: () => set({ sessionISO: null, view: 'calendar' }),
 
       // ─── Splits ───────────────────────────────────────────────────
       splits: [],
