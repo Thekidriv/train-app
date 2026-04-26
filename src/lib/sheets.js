@@ -228,6 +228,54 @@ export async function saveSessionBatch(rows) {
   }
 }
 
+/**
+ * Permanently dedupes the underlying Google Sheet by (date, workout_type,
+ * exercise, set_num). Keeps the most-recently-timestamped row per group
+ * and deletes the rest. Requires the upgraded Apps Script (see
+ * APPS_SCRIPT_DEPLOY.md → action: "clean-duplicates").
+ */
+export async function cleanDuplicates() {
+  const url = requireUrl()
+  const secret = requirePassword()
+  const body = { secret, action: 'clean-duplicates' }
+
+  let res, text
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(body),
+      redirect: 'follow',
+    })
+    text = await res.text()
+  } catch (e) {
+    throw new Error('Network error: ' + e.message)
+  }
+
+  try {
+    const data = JSON.parse(text)
+    if (data.ok === true) return data
+    if (data.ok === false) {
+      if (/unknown action/i.test(data.error || '')) {
+        throw new Error(
+          'Apps Script needs an upgrade. Open Settings → Apps Script setup ' +
+          'instructions and paste the latest Code.gs.'
+        )
+      }
+      throw new Error(data.error || 'Clean failed')
+    }
+    throw new Error('Unexpected response: ' + text.slice(0, 140))
+  } catch (e) {
+    if (e instanceof SyntaxError) {
+      if (text.toLowerCase().includes('unauthorized')) {
+        throw new Error('Unauthorized — check password in Settings.')
+      }
+      throw new Error('Unexpected response: ' + text.slice(0, 140))
+    }
+    throw e
+  }
+}
+
 async function fallbackLegacy(rows) {
   let succeeded = 0
   const failures = []

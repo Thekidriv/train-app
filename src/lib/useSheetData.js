@@ -5,12 +5,15 @@
 import { useEffect, useState, useCallback } from 'react'
 import { fetchRows } from './sheets'
 import { isConfigured, toISODate } from './settings'
+import { dedupeRows } from './dedupe'
 
-const CACHE_KEY = 'trainapp:sheet-cache:v1'
+const CACHE_KEY = 'trainapp:sheet-cache:v2' // bumped to drop dirty cached duplicates
 const CACHE_TTL_MS = 5 * 60 * 1000 // 5 minutes
 
 function readCache() {
   try {
+    // Clean up any pre-v2 cache key (held duplicates from older builds).
+    try { localStorage.removeItem('trainapp:sheet-cache:v1') } catch {}
     const raw = localStorage.getItem(CACHE_KEY)
     if (!raw) return null
     const { rows, fetchedAt } = JSON.parse(raw)
@@ -38,7 +41,10 @@ export function useSheetData() {
     setLoading(true)
     setError(null)
     try {
-      const r = await fetchRows()
+      const raw = await fetchRows()
+      // Collapse legacy duplicates from earlier append-only saves so every
+      // screen sees one row per (date, workout_type, exercise, set_num).
+      const r = dedupeRows(raw)
       setRows(r)
       writeCache(r)
     } catch (e) {
