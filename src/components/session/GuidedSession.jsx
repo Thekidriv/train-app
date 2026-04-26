@@ -16,12 +16,20 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowLeft, ChevronLeft, ChevronRight, Check, SkipForward,
   Flag, Loader2, Trash2, Plus, AlertCircle, CheckCircle2, Timer,
+  Sparkles, TrendingUp, X,
 } from 'lucide-react'
-import { exercisesFor, titleFor } from '../../lib/program'
-import { workoutTypeForDate, toISODate } from '../../lib/settings'
+import { exercisesFor, titleFor, phaseFor } from '../../lib/program'
+import {
+  workoutTypeForDate, toISODate,
+  isSuggestionDismissed, dismissSuggestion, undismissSuggestion,
+  getTrialStatus, setTrialStatus,
+  recordOverrideOutcome, shouldPromptRecalibrate, setRecalibratedWeight,
+} from '../../lib/settings'
 import { saveSessionBatch } from '../../lib/sheets'
 import { useSheetData } from '../../lib/useSheetData'
+import { suggestNext } from '../../lib/suggest'
 import useAppStore from '../../store/useAppStore'
+import PostSessionSummary from './PostSessionSummary'
 
 const REST_MAIN = 180     // 3 min for main lifts
 const REST_SUPERSET = 75  // 75s within supersets
@@ -33,7 +41,14 @@ export default function GuidedSession() {
 
   const date = useMemo(() => isoToDate(sessionISO), [sessionISO])
   const workoutType = workoutTypeForDate(date)
-  const exercises = exercisesFor(workoutType)
+  const phase = phaseFor(workoutType) || 'original'
+  const allExercises = exercisesFor(workoutType)
+  const exercises = useMemo(() => {
+    return allExercises.filter(ex => {
+      const t = getTrialStatus(phase, ex.name)
+      return !t || t.status !== 'removed'
+    })
+  }, [allExercises, phase])
 
   // Last-session prefill per exercise
   const lastByExercise = useMemo(() => {
@@ -68,6 +83,17 @@ export default function GuidedSession() {
   const [rest, setRest] = useState(null)
   const [finishing, setFinishing] = useState(false)
   const [result, setResult] = useState(null)
+  const [trialPrompt, setTrialPrompt] = useState(null)
+  const [recalPrompt, setRecalPrompt] = useState(null)
+  const [summary, setSummary] = useState(null)   // { rows, durationSec }
+  const [, forceTick] = useState(0)
+
+  // Suggestion per exercise
+  const suggestions = useMemo(() => {
+    const m = {}
+    for (const ex of exercises) m[ex.name] = suggestNext(ex, rows)
+    return m
+  }, [exercises, rows])
 
   // Persist
   useEffect(() => {
@@ -168,7 +194,31 @@ export default function GuidedSession() {
     setFinishing(true)
     setResult(null)
     const flat = []
+    const trialsLogged = []
+    const overrideRecords = []
+
     for (const ex of state) {
+      const exDef = exercises.find(e => e.name === ex.exerciseName)
+      const trial = getTrialStatus(phase, ex.exerciseName)
+      const isPendingTrial = exDef?.trial && (!trial || trial.status === 'pending')
+
+      const loggedSets = ex.sets.filter(s => s.logged)
+      if (loggedSets.length && isPendingTrial) {
+        trialsLogged.push(ex.exerciseName)
+      }
+      if (loggedSets.length && suggestions[ex.exerciseName] && !suggestions[ex.exerciseName].coldStart) {
+        const top = loggedSets.reduce((acc, st) => {
+          const w = Number(st.weight_kg) || 0
+          return w > (acc.w || 0) ? { w, r: Number(st.reps) || 0 } : acc
+        }, { w: 0, r: 0 })
+        overrideRecords.push({
+          name: ex.exerciseName,
+          suggestion: suggestions[ex.exerciseName],
+          weight: top.w,
+          reps: top.r,
+        })
+      }
+
       ex.sets.forEach((st, i) => {
         if (!st.logged) return
         flat.push({
@@ -193,12 +243,65 @@ export default function GuidedSession() {
       setResult({ ...r, total: flat.length })
       try { localStorage.removeItem(storageKey) } catch {}
       refresh()
-      setTimeout(() => { endGuidedSession() }, 1200)
+
+      for (const o of overrideRecords) {
+        recordOverrideOutcome(o.name, o.suggestion, o.weight, o.reps)
+      }
+
+      // Trial pain prompt first; then recalibrate; then summary
+      if (trialsLogged.length) {
+        setTrialPrompt({ exerciseName: trialsLogged[0], queue: trialsLogged.slice(1), pendingFinishRows: flat })
+        return
+      }
+      const recalCandidate = overrideRecords.find(o => shouldPromptRecalibrate(o.name))
+      if (recalCandidate) {
+        setRecalPrompt({
+          exerciseName: recalCandidate.name,
+          suggestion: recalCandidate.suggestion,
+          actualWeight: recalCandidate.weight,
+          pendingFinishRows: flat,
+        })
+        return
+      }
+      // Show post-session summary
+      setSummary({
+        loggedRows: flat,
+        durationSec: Math.floor((Date.now() - startedAt) / 1000),
+      })
     } catch (e) {
       setResult({ ok: false, error: e.message })
     } finally {
       setFinishing(false)
     }
+  }
+
+  const handleTrialDone = () => {
+    const remaining = trialPrompt?.queue || []
+    const flat = trialPrompt?.pendingFinishRows
+    if (remaining.length) {
+      setTrialPrompt({ exerciseName: remaining[0], queue: remaining.slice(1), pendingFinishRows: flat })
+      return
+    }
+    setTrialPrompt(null)
+    // Continue to recalibrate / summary
+    setSummary({
+      loggedRows: flat || [],
+      durationSec: Math.floor((Date.now() - startedAt) / 1000),
+    })
+  }
+
+  const handleRecalDone = () => {
+    const flat = recalPrompt?.pendingFinishRows
+    setRecalPrompt(null)
+    setSummary({
+      loggedRows: flat || [],
+      durationSec: Math.floor((Date.now() - startedAt) / 1000),
+    })
+  }
+
+  const handleSummaryDone = () => {
+    setSummary(null)
+    endGuidedSession()
   }
 
   const fmt = date.toLocaleDateString(undefined, {
@@ -262,6 +365,19 @@ export default function GuidedSession() {
       {/* Body */}
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
         <div className="bg-bg-1 border border-bg-3 rounded-2xl p-4">
+          <div className="flex items-center gap-1.5 mb-1">
+            {(() => {
+              const exDef = exercises.find(e => e.name === current.exerciseName)
+              const trial = getTrialStatus(phase, current.exerciseName)
+              if (exDef?.trial && (!trial || trial.status === 'pending')) {
+                return <span className="bg-warn/15 border border-warn/40 text-warn px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider">Trial</span>
+              }
+              if (trial?.status === 'cleared') {
+                return <span className="bg-success/15 border border-success/40 text-success px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider">Cleared</span>
+              }
+              return null
+            })()}
+          </div>
           <h2 className="text-white font-bold text-lg leading-tight">{current.exerciseName}</h2>
           <div className="text-[12px] text-txt-secondary mt-1 tabular-nums">
             Target: {current.target.sets}×{current.target.reps || '—'}
@@ -279,6 +395,35 @@ export default function GuidedSession() {
             <div className="text-[12px] text-accent-light italic bg-accent/5 border border-accent/20 rounded-md px-3 py-2 mt-3 leading-snug">
               {current.note}
             </div>
+          )}
+
+          {/* Suggestion */}
+          {suggestions[current.exerciseName] && !isSuggestionDismissed(current.exerciseName) && (
+            <div className={`flex items-start gap-1.5 mt-3 px-3 py-2 rounded-md border ${
+              suggestions[current.exerciseName].plateau
+                ? 'bg-warn/5 border-warn/30 text-warn'
+                : 'bg-accent/5 border-accent/30 text-accent-light'
+            }`}>
+              {suggestions[current.exerciseName].plateau ? <TrendingUp size={12} className="mt-0.5" /> : <Sparkles size={12} className="mt-0.5" />}
+              <div className="flex-1 text-[12px] leading-snug">
+                <span className="font-bold">Next session:</span> {suggestions[current.exerciseName].headline}
+              </div>
+              <button
+                onClick={() => { dismissSuggestion(current.exerciseName); forceTick(n => n + 1) }}
+                className="text-txt-muted hover:text-white -mr-1 -mt-0.5"
+                aria-label="Dismiss"
+              >
+                <X size={13} />
+              </button>
+            </div>
+          )}
+          {suggestions[current.exerciseName] && isSuggestionDismissed(current.exerciseName) && (
+            <button
+              onClick={() => { undismissSuggestion(current.exerciseName); forceTick(n => n + 1) }}
+              className="text-[10px] text-txt-muted hover:text-accent-light mt-2 underline"
+            >
+              Show suggestion
+            </button>
           )}
         </div>
 
@@ -358,6 +503,98 @@ export default function GuidedSession() {
           onSkip={() => setRest(null)}
         />
       )}
+
+      {trialPrompt && (
+        <TrialPainPrompt
+          exerciseName={trialPrompt.exerciseName}
+          phase={phase}
+          onDone={handleTrialDone}
+        />
+      )}
+      {recalPrompt && (
+        <RecalibratePrompt
+          exerciseName={recalPrompt.exerciseName}
+          suggestion={recalPrompt.suggestion}
+          actualWeight={recalPrompt.actualWeight}
+          onDone={handleRecalDone}
+        />
+      )}
+      {summary && (
+        <PostSessionSummary
+          workoutType={workoutType}
+          loggedRows={summary.loggedRows}
+          rows={[...rows, ...summary.loggedRows]}
+          exercises={exercises}
+          durationSec={summary.durationSec}
+          onDone={handleSummaryDone}
+        />
+      )}
+    </div>
+  )
+}
+
+// ─── Trial pain prompt ─────────────────────────────────────────
+
+function TrialPainPrompt({ exerciseName, phase, onDone }) {
+  const handle = (answer) => {
+    if (answer === 'no') setTrialStatus(phase, exerciseName, 'cleared')
+    else setTrialStatus(phase, exerciseName, 'removed')
+    onDone()
+  }
+  return (
+    <div className="fixed inset-0 z-50 bg-black/80 flex items-end sm:items-center justify-center p-0 sm:p-4">
+      <div className="bg-bg-1 w-full sm:max-w-md sm:rounded-2xl rounded-t-2xl border border-bg-3 p-5">
+        <div className="text-[10px] uppercase tracking-widest text-warn font-bold mb-1">Trial Exercise</div>
+        <h3 className="text-white font-bold text-base mb-1">{exerciseName}</h3>
+        <p className="text-txt-secondary text-sm leading-snug">
+          Did this provoke pain at your focal site (right tibia / shin)?
+        </p>
+        <div className="grid grid-cols-3 gap-2 mt-4">
+          <button onClick={() => handle('yes')} className="bg-danger/15 border border-danger/40 text-danger font-semibold rounded-lg py-2.5 text-sm">Yes</button>
+          <button onClick={() => handle('mild')} className="bg-warn/15 border border-warn/40 text-warn font-semibold rounded-lg py-2.5 text-sm">Mild</button>
+          <button onClick={() => handle('no')} className="bg-success/15 border border-success/40 text-success font-semibold rounded-lg py-2.5 text-sm">No</button>
+        </div>
+        <p className="text-[11px] text-txt-muted mt-3 leading-snug">
+          Yes / Mild → exercise removed from the program for the rest of the recovery phase.
+          No → marked Cleared.
+        </p>
+      </div>
+    </div>
+  )
+}
+
+// ─── Recalibrate prompt ────────────────────────────────────────
+
+function RecalibratePrompt({ exerciseName, suggestion, actualWeight, onDone }) {
+  const [weight, setWeight] = useState(String(actualWeight || suggestion?.weight || ''))
+  const submit = () => {
+    const w = Number(weight)
+    if (!Number.isNaN(w) && w > 0) setRecalibratedWeight(exerciseName, w)
+    onDone()
+  }
+  return (
+    <div className="fixed inset-0 z-50 bg-black/80 flex items-end sm:items-center justify-center p-0 sm:p-4">
+      <div className="bg-bg-1 w-full sm:max-w-md sm:rounded-2xl rounded-t-2xl border border-bg-3 p-5">
+        <div className="text-[10px] uppercase tracking-widest text-accent-light font-bold mb-1">Recalibrate</div>
+        <h3 className="text-white font-bold text-base mb-1">{exerciseName}</h3>
+        <p className="text-txt-secondary text-sm leading-snug">
+          You've overridden the suggestion 3 sessions in a row. Set a new baseline weight?
+        </p>
+        <div className="mt-4">
+          <label className="block text-[11px] text-txt-muted uppercase tracking-wider mb-1">Baseline weight (kg)</label>
+          <input
+            type="text"
+            inputMode="decimal"
+            value={weight}
+            onChange={e => setWeight(e.target.value)}
+            className="w-full bg-bg-2 text-white text-base rounded-lg px-3 py-2.5 border border-bg-3 focus:border-accent focus:outline-none tabular-nums"
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-2 mt-4">
+          <button onClick={onDone} className="bg-bg-2 border border-bg-3 text-txt-secondary font-semibold rounded-lg py-2.5 text-sm">Skip</button>
+          <button onClick={submit} className="bg-accent hover:bg-accent-dark text-white font-semibold rounded-lg py-2.5 text-sm">Set baseline</button>
+        </div>
+      </div>
     </div>
   )
 }

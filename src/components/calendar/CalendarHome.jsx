@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react'
-import { ChevronLeft, ChevronRight, Settings as SettingsIcon, Pencil, Check, RefreshCw } from 'lucide-react'
-import { getSettings, workoutTypeForDate, toISODate, isConfigured } from '../../lib/settings'
+import { ChevronLeft, ChevronRight, Settings as SettingsIcon, Pencil, Check, RefreshCw, Heart, Activity } from 'lucide-react'
+import { getSettings, workoutTypeForDate, toISODate, isConfigured, activePhase } from '../../lib/settings'
 import { useSheetData, rowsByDate, lastSessionForType } from '../../lib/useSheetData'
 import useAppStore from '../../store/useAppStore'
 import SettingsModal from '../settings/SettingsModal'
@@ -83,16 +83,19 @@ export default function CalendarHome() {
 
       {/* Action row */}
       <div className="flex items-center justify-between px-4 pb-3">
-        <div className="flex items-center gap-2 text-[11px] text-txt-muted">
-          {loading && <span className="flex items-center gap-1"><RefreshCw size={11} className="animate-spin" />Syncing…</span>}
-          {error && !loading && (
-            <button onClick={refresh} className="text-danger">Sync failed · retry</button>
-          )}
-          {!loading && !error && (
-            <button onClick={refresh} className="flex items-center gap-1 hover:text-white">
-              <RefreshCw size={11} />Synced
-            </button>
-          )}
+        <div className="flex items-center gap-2">
+          <PhaseBadge phase={activePhase()} />
+          <div className="flex items-center gap-2 text-[11px] text-txt-muted">
+            {loading && <span className="flex items-center gap-1"><RefreshCw size={11} className="animate-spin" />Syncing…</span>}
+            {error && !loading && (
+              <button onClick={refresh} className="text-danger">Sync failed · retry</button>
+            )}
+            {!loading && !error && (
+              <button onClick={refresh} className="flex items-center gap-1 hover:text-white">
+                <RefreshCw size={11} />Synced
+              </button>
+            )}
+          </div>
         </div>
         <div className="flex items-center gap-1">
           <button
@@ -299,9 +302,16 @@ function isRestType(t) {
 }
 
 function shortType(t) {
-  // "Upper A" → "U A", "Lower B" → "L B", "Push" → "P"
-  return String(t)
+  const s = String(t || '')
+  // Map long recovery names to short labels
+  if (/upper a.*until/i.test(s)) return 'UA·R'
+  if (/upper b.*until/i.test(s)) return 'UB·R'
+  if (/recovery.*core a/i.test(s)) return 'R+A'
+  if (/recovery.*core b/i.test(s)) return 'R+B'
+  // Default: first letter of each word, e.g. "Upper A" → "UA"
+  return s
     .split(/\s+/)
+    .filter(w => /^[A-Za-z0-9]/.test(w))
     .map(w => w[0])
     .join('')
     .toUpperCase()
@@ -320,4 +330,21 @@ function pillForType(t) {
   if (isRestType(t)) return 'bg-bg-2 text-txt-muted'
   const { bg, label } = tintForType(t)
   return `${bg} ${label}`
+}
+
+function PhaseBadge({ phase }) {
+  if (phase === 'until-recovery') {
+    return (
+      <span className="flex items-center gap-1 bg-warn/10 border border-warn/30 text-warn rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider">
+        <Heart size={10} />
+        Recovery Phase
+      </span>
+    )
+  }
+  return (
+    <span className="flex items-center gap-1 bg-accent/10 border border-accent/30 text-accent-light rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider">
+      <Activity size={10} />
+      Original
+    </span>
+  )
 }

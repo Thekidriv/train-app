@@ -1,18 +1,23 @@
 // src/components/routines/RoutinesList.jsx
-// Read-only catalog of the 4-day program. Tap a split → see exercises grouped
-// by Main / Superset A / B / C. Each split has a "Quick Log" shortcut that
-// opens Quick Log for the next scheduled occurrence of that workout_type.
+// Phase-aware program catalog. Shows the splits for the currently active
+// phase. Each split detail view lists exercises grouped by Main / Superset
+// with target × weight, coaching note, optional TRIAL badge, and the
+// per-exercise next-session suggestion pulled from sheet history.
 
-import React, { useState } from 'react'
-import { ChevronRight, ArrowLeft, ClipboardList } from 'lucide-react'
-import { PROGRAM } from '../../lib/program'
-import { workoutTypeForDate, toISODate } from '../../lib/settings'
+import React, { useMemo, useState } from 'react'
+import { ChevronRight, ArrowLeft, ClipboardList, Heart, Activity } from 'lucide-react'
+import { PROGRAM, WORKOUT_TYPES_ORIGINAL, WORKOUT_TYPES_RECOVERY } from '../../lib/program'
+import { workoutTypeForDate, toISODate, activePhase, getTrialStatus } from '../../lib/settings'
+import { useSheetData } from '../../lib/useSheetData'
+import { suggestNext } from '../../lib/suggest'
 import useAppStore from '../../store/useAppStore'
-
-const ORDER = ['Upper A', 'Lower A', 'Upper B', 'Lower B']
 
 export default function RoutinesList() {
   const [selected, setSelected] = useState(null)
+  const phase = activePhase()
+  const order = phase === 'until-recovery'
+    ? WORKOUT_TYPES_RECOVERY.filter(t => t !== 'Rest')
+    : WORKOUT_TYPES_ORIGINAL.filter(t => t !== 'Rest')
 
   if (selected) {
     return <RoutineDetail workoutType={selected} onBack={() => setSelected(null)} />
@@ -21,17 +26,21 @@ export default function RoutinesList() {
   return (
     <div className="flex-1 overflow-y-auto pb-24">
       <div className="px-4 pt-5 pb-3">
-        <h1 className="text-xl font-bold text-white">Routines</h1>
+        <div className="flex items-center gap-2 mb-1">
+          <h1 className="text-xl font-bold text-white">Routines</h1>
+          <PhasePill phase={phase} />
+        </div>
         <p className="text-xs text-txt-secondary mt-0.5">
-          Your 4-day program. Tap a split to see exercises.
+          {phase === 'until-recovery'
+            ? 'Recovery phase — upper-body focus while shin heals.'
+            : 'Your standard 4-day program.'}
         </p>
       </div>
 
       <div className="px-4 space-y-2">
-        {ORDER.map(key => {
+        {order.map(key => {
           const entry = PROGRAM[key]
           if (!entry) return null
-          const { summary } = summarize(entry.exercises)
           return (
             <button
               key={key}
@@ -44,7 +53,7 @@ export default function RoutinesList() {
               <div className="flex-1 min-w-0">
                 <p className="font-semibold text-white text-[15px] leading-tight">{entry.title}</p>
                 <p className="text-[11px] text-txt-muted mt-0.5">
-                  {entry.exercises.length} exercises · {entry.duration} · {summary}
+                  {entry.exercises.length} exercises · {entry.duration}
                 </p>
               </div>
               <ChevronRight size={16} className="text-txt-muted flex-shrink-0" />
@@ -61,25 +70,27 @@ export default function RoutinesList() {
 function RoutineDetail({ workoutType, onBack }) {
   const entry = PROGRAM[workoutType]
   const openQuickLog = useAppStore(s => s.openQuickLog)
+  const { rows } = useSheetData()
+  const phase = activePhase()
 
-  // Group exercises by group label
+  // Filter out exercises marked 'removed' by the trial system for this phase.
+  const visibleExercises = useMemo(() => {
+    return entry.exercises.filter(ex => {
+      const t = getTrialStatus(phase, ex.name)
+      return !t || t.status !== 'removed'
+    })
+  }, [entry.exercises, phase])
+
+  // Group by group label
   const groups = {}
-  for (const ex of entry.exercises) {
-    ;(groups[ex.group] ||= []).push(ex)
-  }
+  for (const ex of visibleExercises) (groups[ex.group] ||= []).push(ex)
 
-  // Find the next date in the next ~14 days matching this workout_type (so
-  // "Quick Log this workout" opens the right calendar day)
   const nextISO = findNextScheduledDate(workoutType)
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
       <div className="flex items-center gap-2 px-4 py-2.5 bg-bg-1 border-b border-bg-3 flex-shrink-0">
-        <button
-          onClick={onBack}
-          className="p-1 -ml-1 text-txt-secondary hover:text-white"
-          aria-label="Back"
-        >
+        <button onClick={onBack} className="p-1 -ml-1 text-txt-secondary hover:text-white" aria-label="Back">
           <ArrowLeft size={20} />
         </button>
         <div className="flex-1 min-w-0">
@@ -97,12 +108,11 @@ function RoutineDetail({ workoutType, onBack }) {
             </div>
             <div className="space-y-1.5">
               {exes.map((ex, i) => (
-                <ExerciseRow key={ex.name + i} ex={ex} />
+                <ExerciseRow key={ex.name + i} ex={ex} rows={rows} phase={phase} />
               ))}
             </div>
           </div>
         ))}
-
         <div className="h-2" />
       </div>
 
@@ -119,16 +129,32 @@ function RoutineDetail({ workoutType, onBack }) {
   )
 }
 
-function ExerciseRow({ ex }) {
+function ExerciseRow({ ex, rows, phase }) {
   const target = `${ex.sets}×${ex.reps || '—'}${ex.weight ? ` @ ${ex.weight}kg` : ''}`
+  const trial = getTrialStatus(phase, ex.name)
+  const suggestion = useMemo(() => suggestNext(ex, rows), [ex, rows])
+  const hasHistory = !!suggestion && suggestion.reason && !suggestion.reason.includes('No history')
+
   return (
     <div className="bg-bg-1 border border-bg-3 rounded-xl px-3 py-2.5">
       <div className="flex items-baseline justify-between gap-3">
-        <span className="text-white font-semibold text-sm leading-tight">{ex.name}</span>
+        <div className="flex items-center gap-1.5 min-w-0 flex-1">
+          <span className="text-white font-semibold text-sm leading-tight truncate">{ex.name}</span>
+          {trial?.status === 'pending' || ex.trial && !trial ? (
+            <span className="bg-warn/15 border border-warn/40 text-warn px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider">Trial</span>
+          ) : trial?.status === 'cleared' ? (
+            <span className="bg-success/15 border border-success/40 text-success px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider">Cleared</span>
+          ) : null}
+        </div>
         <span className="text-[11px] text-txt-secondary font-mono tabular-nums whitespace-nowrap">{target}</span>
       </div>
       {ex.note && (
         <div className="text-[11px] text-txt-muted italic mt-1 leading-snug">{ex.note}</div>
+      )}
+      {hasHistory && (
+        <div className="text-[11px] text-accent-light mt-1 leading-snug">
+          → Next: {suggestion.headline}
+        </div>
       )}
     </div>
   )
@@ -136,13 +162,26 @@ function ExerciseRow({ ex }) {
 
 // ─── Helpers ────────────────────────────────────────────────────
 
-function summarize(exercises) {
-  const main = exercises.filter(e => e.group === 'Main').map(e => e.name).slice(0, 2)
-  return { summary: main.join(' + ') || 'Mixed' }
+function PhasePill({ phase }) {
+  if (phase === 'until-recovery') {
+    return (
+      <span className="flex items-center gap-1 bg-warn/10 border border-warn/30 text-warn rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider">
+        <Heart size={10} /> Recovery
+      </span>
+    )
+  }
+  return (
+    <span className="flex items-center gap-1 bg-accent/10 border border-accent/30 text-accent-light rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider">
+      <Activity size={10} /> Original
+    </span>
+  )
 }
 
 function shortLabel(key) {
-  // "Upper A" -> "UA"
+  if (/upper a.*until/i.test(key)) return 'UA·R'
+  if (/upper b.*until/i.test(key)) return 'UB·R'
+  if (/recovery.*core a/i.test(key)) return 'R+A'
+  if (/recovery.*core b/i.test(key)) return 'R+B'
   return key.split(/\s+/).map(w => w[0]).join('').toUpperCase()
 }
 
@@ -150,6 +189,7 @@ function badge(key) {
   const k = key.toLowerCase()
   if (k.startsWith('upper')) return 'bg-accent/15 text-accent-light'
   if (k.startsWith('lower')) return 'bg-success/15 text-success'
+  if (k.startsWith('recovery')) return 'bg-warn/15 text-warn'
   return 'bg-bg-2 text-txt-secondary'
 }
 

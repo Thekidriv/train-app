@@ -1,15 +1,16 @@
 import React from 'react'
 import { X, RotateCcw } from 'lucide-react'
-import { setDayOverride, getSettings, workoutTypeForDate } from '../../lib/settings'
-
-const CHOICES = ['Upper A', 'Lower A', 'Upper B', 'Lower B', 'Rest']
+import { setDayOverride, getSettings, workoutTypeForDate, activePhase } from '../../lib/settings'
+import { workoutTypesInPhase } from '../../lib/program'
 
 export default function DayAssignSheet({ iso, onClose }) {
   if (!iso) return null
 
   const settings = getSettings()
   const date = parseISO(iso)
-  const patternType = settings.defaultPattern[date.getDay()] || 'Rest'
+  const phase = activePhase()
+  const choices = workoutTypesInPhase(phase)
+  const patternType = settings.patterns[phase]?.[date.getDay()] || 'Rest'
   const currentType = workoutTypeForDate(date)
   const isOverridden = settings.dayOverrides[iso] !== undefined
 
@@ -52,14 +53,18 @@ export default function DayAssignSheet({ iso, onClose }) {
           )}
         </div>
 
-        <div className="grid grid-cols-2 gap-2">
-          {CHOICES.map((c) => {
+        <div className="text-[10px] uppercase tracking-wider text-txt-muted mb-2">
+          {phase === 'until-recovery' ? 'Recovery phase choices' : 'Original phase choices'}
+        </div>
+
+        <div className="grid grid-cols-1 gap-2">
+          {choices.map((c) => {
             const active = c === currentType
             return (
               <button
                 key={c}
                 onClick={() => pick(c)}
-                className={`px-3 py-3 rounded-lg text-sm font-semibold border text-left ${
+                className={`px-3 py-2.5 rounded-lg text-sm font-semibold border text-left ${
                   active
                     ? 'bg-accent text-white border-accent'
                     : 'bg-bg-2 text-white border-bg-3 hover:border-bg-5'

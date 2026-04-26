@@ -5,10 +5,10 @@
 
 import React, { useMemo, useState } from 'react'
 import {
-  Calendar, ChevronRight, ChevronUp, RefreshCw, Pencil, AlertCircle,
+  Calendar, ChevronRight, ChevronUp, RefreshCw, Pencil, AlertCircle, Heart, Activity,
 } from 'lucide-react'
 import { useSheetData } from '../../lib/useSheetData'
-import { toISODate, isConfigured } from '../../lib/settings'
+import { toISODate, isConfigured, getSettings } from '../../lib/settings'
 import useAppStore from '../../store/useAppStore'
 
 export default function HistoryView() {
@@ -17,6 +17,12 @@ export default function HistoryView() {
   const [expanded, setExpanded] = useState(null)
 
   const sessions = useMemo(() => groupByDate(rows), [rows])
+  const phaseEvents = useMemo(() => {
+    const h = getSettings().phaseHistory || []
+    const map = {}
+    for (const e of h) (map[e.isoDate] ||= []).push(e)
+    return map
+  }, [])
 
   if (!isConfigured()) {
     return (
@@ -84,8 +90,12 @@ export default function HistoryView() {
           <div className="px-4 space-y-1.5">
             {list.map(session => {
               const isOpen = expanded === session.iso
+              const phaseEvts = phaseEvents[session.iso] || []
               return (
                 <div key={session.iso} className="bg-bg-1 border border-bg-3 rounded-xl overflow-hidden">
+                  {phaseEvts.map((e, i) => (
+                    <PhaseChangeChip key={i} event={e} />
+                  ))}
                   <button
                     onClick={() => setExpanded(isOpen ? null : session.iso)}
                     className="w-full flex items-center gap-3 px-3 py-3 text-left"
@@ -149,6 +159,20 @@ export default function HistoryView() {
 }
 
 // ─── Helpers ────────────────────────────────────────────────────
+
+function PhaseChangeChip({ event }) {
+  const Icon = event.to === 'until-recovery' ? Heart : Activity
+  const color = event.to === 'until-recovery' ? 'warn' : 'accent-light'
+  const label = event.to === 'until-recovery'
+    ? 'Switched to Recovery Phase'
+    : 'Switched to Original Phase'
+  return (
+    <div className={`flex items-center gap-1.5 px-3 py-1.5 border-b border-bg-3 bg-bg-2/40 text-${color} text-[11px]`}>
+      <Icon size={11} />
+      <span className="font-semibold">{label}</span>
+    </div>
+  )
+}
 
 function DatePill({ iso }) {
   const [y, m, d] = iso.split('-').map(Number)
