@@ -2,7 +2,7 @@ import React from 'react'
 import { X, RotateCcw } from 'lucide-react'
 import { setDayOverride, getSettings, workoutTypeForDate } from '../../lib/settings'
 
-const CHOICES = ['Upper A', 'Upper B', 'Lower A', 'Lower B', 'Push', 'Pull', 'Legs', 'Rest']
+const CHOICES = ['Upper A', 'Lower A', 'Upper B', 'Lower B', 'Rest']
 
 export default function DayAssignSheet({ iso, onClose }) {
   if (!iso) return null

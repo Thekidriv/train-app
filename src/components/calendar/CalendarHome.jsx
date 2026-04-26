@@ -313,9 +313,6 @@ function tintForType(t) {
   const s = String(t).toLowerCase()
   if (s.startsWith('upper')) return { bg: 'bg-accent/15', label: 'text-accent-light' }
   if (s.startsWith('lower')) return { bg: 'bg-success/15', label: 'text-success' }
-  if (s.startsWith('push'))  return { bg: 'bg-accent/15', label: 'text-accent-light' }
-  if (s.startsWith('pull'))  return { bg: 'bg-warn/15',   label: 'text-warn' }
-  if (s.startsWith('leg'))   return { bg: 'bg-success/15', label: 'text-success' }
   return { bg: 'bg-bg-2', label: 'text-txt-secondary' }
 }
 
