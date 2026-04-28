@@ -16,7 +16,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowLeft, ChevronLeft, ChevronRight, Check, SkipForward,
   Flag, Loader2, Trash2, Plus, AlertCircle, CheckCircle2, Timer,
-  Sparkles, TrendingUp, X,
+  Sparkles, TrendingUp, X, Pause, Play,
 } from 'lucide-react'
 import { exercisesFor, titleFor, phaseFor } from '../../lib/program'
 import {
@@ -74,11 +74,14 @@ export default function GuidedSession() {
 
   const storageKey = `trainapp:session:${sessionISO}:${workoutType}`
 
-  // Initial load — returns { state, currentIdx, startedAt }
+  // Initial load — returns { state, currentIdx, startedAt, pause }
   const [loaded] = useState(() => loadOrBuild(storageKey, exercises, lastByExercise))
   const [state, setState] = useState(loaded.state)
   const [currentIdx, setCurrentIdx] = useState(loaded.currentIdx)
   const [startedAt] = useState(loaded.startedAt)
+  // Pause: { pausedAtMs: number|null, accumPauseMs: number }
+  // When pausedAtMs is set, both the workout clock and any active rest timer freeze.
+  const [pause, setPause] = useState(loaded.pause || { pausedAtMs: null, accumPauseMs: 0 })
 
   const [rest, setRest] = useState(null)
   const [finishing, setFinishing] = useState(false)
@@ -88,6 +91,15 @@ export default function GuidedSession() {
   const [summary, setSummary] = useState(null)   // { rows, durationSec }
   const [, forceTick] = useState(0)
 
+  const togglePause = () => {
+    setPause(p => {
+      if (p.pausedAtMs == null) return { ...p, pausedAtMs: Date.now() }
+      // Resume — accumulate the paused span
+      return { pausedAtMs: null, accumPauseMs: p.accumPauseMs + (Date.now() - p.pausedAtMs) }
+    })
+  }
+  const isPaused = pause.pausedAtMs != null
+
   // Suggestion per exercise
   const suggestions = useMemo(() => {
     const m = {}
@@ -95,13 +107,13 @@ export default function GuidedSession() {
     return m
   }, [exercises, rows])
 
-  // Persist
+  // Persist (including pause state so closing/reopening preserves it)
   useEffect(() => {
     if (!state) return
     try {
-      localStorage.setItem(storageKey, JSON.stringify({ state, currentIdx, startedAt }))
+      localStorage.setItem(storageKey, JSON.stringify({ state, currentIdx, startedAt, pause }))
     } catch {}
-  }, [state, currentIdx, startedAt, storageKey])
+  }, [state, currentIdx, startedAt, pause, storageKey])
 
   // ─── Screen Wake Lock ────────────────────────────────────────
   // Keep the phone from auto-locking while a session is active.
@@ -266,7 +278,7 @@ export default function GuidedSession() {
       // Show post-session summary
       setSummary({
         loggedRows: flat,
-        durationSec: Math.floor((Date.now() - startedAt) / 1000),
+        durationSec: Math.floor(elapsedMs(startedAt, Date.now(), pause) / 1000),
       })
     } catch (e) {
       setResult({ ok: false, error: e.message })
@@ -286,7 +298,7 @@ export default function GuidedSession() {
     // Continue to recalibrate / summary
     setSummary({
       loggedRows: flat || [],
-      durationSec: Math.floor((Date.now() - startedAt) / 1000),
+      durationSec: Math.floor(elapsedMs(startedAt, Date.now(), pause) / 1000),
     })
   }
 
@@ -295,7 +307,7 @@ export default function GuidedSession() {
     setRecalPrompt(null)
     setSummary({
       loggedRows: flat || [],
-      durationSec: Math.floor((Date.now() - startedAt) / 1000),
+      durationSec: Math.floor(elapsedMs(startedAt, Date.now(), pause) / 1000),
     })
   }
 
@@ -323,7 +335,16 @@ export default function GuidedSession() {
           <div className="text-[10px] text-txt-muted uppercase tracking-wider">{fmt}</div>
           <div className="text-white font-bold text-sm truncate">{titleFor(workoutType)}</div>
         </div>
-        <WorkoutClock startedAt={startedAt} />
+        <button
+          onClick={togglePause}
+          className={`p-1.5 rounded-full transition-colors ${
+            isPaused ? 'bg-warn/20 text-warn' : 'text-txt-secondary hover:text-white'
+          }`}
+          aria-label={isPaused ? 'Resume' : 'Pause'}
+        >
+          {isPaused ? <Play size={16} /> : <Pause size={16} />}
+        </button>
+        <WorkoutClock startedAt={startedAt} pause={pause} />
       </div>
 
       {/* Progress bar */}
@@ -499,6 +520,9 @@ export default function GuidedSession() {
         <RestTimerOverlay
           key={rest.startedAt}
           duration={rest.duration}
+          startedAt={rest.startedAt}
+          sessionPaused={isPaused}
+          onTogglePause={togglePause}
           onDone={() => setRest(null)}
           onSkip={() => setRest(null)}
         />
@@ -601,17 +625,20 @@ function RecalibratePrompt({ exerciseName, suggestion, actualWeight, onDone }) {
 
 // ─── Top-right running workout clock ───────────────────────────
 
-function WorkoutClock({ startedAt }) {
+function WorkoutClock({ startedAt, pause }) {
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(id)
   }, [])
-  const elapsedSec = Math.max(0, Math.floor((now - startedAt) / 1000))
+  const elapsedSec = Math.max(0, Math.floor(elapsedMs(startedAt, now, pause) / 1000))
+  const paused = pause?.pausedAtMs != null
   return (
-    <div className="flex items-center gap-1.5 bg-bg-2 border border-bg-3 rounded-full px-2.5 py-1">
-      <Timer size={12} className="text-accent-light" />
-      <span className="text-[12px] font-bold text-white tabular-nums whitespace-nowrap">
+    <div className={`flex items-center gap-1.5 border rounded-full px-2.5 py-1 ${
+      paused ? 'bg-warn/10 border-warn/30' : 'bg-bg-2 border-bg-3'
+    }`}>
+      <Timer size={12} className={paused ? 'text-warn' : 'text-accent-light'} />
+      <span className={`text-[12px] font-bold tabular-nums whitespace-nowrap ${paused ? 'text-warn' : 'text-white'}`}>
         {formatClock(elapsedSec)}
       </span>
     </div>
@@ -703,25 +730,34 @@ function NumInput({ value, onChange, placeholder, disabled }) {
 
 // ─── Rest timer overlay + beep ────────────────────────────────
 
-function RestTimerOverlay({ duration, onDone, onSkip }) {
+function RestTimerOverlay({ duration, startedAt, sessionPaused, onTogglePause, onDone, onSkip }) {
+  // The rest timer maintains its own pause accumulation so a session pause
+  // mid-rest doesn't drain the rest countdown. The session pause button is
+  // also reflected here as the visible Pause/Resume control.
+  const [restPause, setRestPause] = useState({ pausedAtMs: null, accumPauseMs: 0 })
   const [remaining, setRemaining] = useState(duration)
-  const startedRef = useRef(Date.now())
   const beepedRef = useRef(false)
+  const prevSessionPaused = useRef(sessionPaused)
+
+  // Mirror session pause state into rest pause — toggling either pauses both.
+  useEffect(() => {
+    if (sessionPaused === prevSessionPaused.current) return
+    prevSessionPaused.current = sessionPaused
+    setRestPause(p => {
+      if (sessionPaused && p.pausedAtMs == null) return { ...p, pausedAtMs: Date.now() }
+      if (!sessionPaused && p.pausedAtMs != null) {
+        return { pausedAtMs: null, accumPauseMs: p.accumPauseMs + (Date.now() - p.pausedAtMs) }
+      }
+      return p
+    })
+  }, [sessionPaused])
 
   useEffect(() => {
-    if (remaining <= 0) {
-      if (!beepedRef.current) {
-        beepedRef.current = true
-        playRestEndBeep()
-      }
-      onDone()
-      return
-    }
     const id = setInterval(() => {
-      const elapsed = (Date.now() - startedRef.current) / 1000
+      const elapsed = elapsedMs(startedAt, Date.now(), restPause) / 1000
       const left = Math.max(0, duration - elapsed)
       setRemaining(Math.ceil(left))
-      if (left <= 0) {
+      if (left <= 0 && !restPause.pausedAtMs) {
         clearInterval(id)
         if (!beepedRef.current) {
           beepedRef.current = true
@@ -732,14 +768,15 @@ function RestTimerOverlay({ duration, onDone, onSkip }) {
     }, 250)
     return () => clearInterval(id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [restPause, duration, startedAt])
 
+  const isPaused = restPause.pausedAtMs != null
   const pct = Math.max(0, remaining) / duration
-  const isCritical = remaining <= 10
+  const isCritical = remaining <= 10 && !isPaused
   const r = 56
   const c = 2 * Math.PI * r
   const dashoffset = c * (1 - pct)
-  const color = isCritical ? '#FF453A' : '#4F86F7'
+  const color = isPaused ? '#FF9F0A' : (isCritical ? '#FF453A' : '#4F86F7')
 
   const mins = Math.floor(remaining / 60)
   const secs = remaining % 60
@@ -748,7 +785,9 @@ function RestTimerOverlay({ duration, onDone, onSkip }) {
   return (
     <div className="fixed inset-0 z-40 bg-black/80 backdrop-blur-sm flex items-center justify-center p-6">
       <div className="flex flex-col items-center">
-        <div className="text-[11px] uppercase tracking-widest text-txt-muted mb-3">Rest</div>
+        <div className="text-[11px] uppercase tracking-widest text-txt-muted mb-3">
+          {isPaused ? 'Paused' : 'Rest'}
+        </div>
         <div className="relative">
           <svg width="160" height="160" viewBox="0 0 160 160">
             <circle cx="80" cy="80" r={r} stroke="#272727" strokeWidth="6" fill="none" />
@@ -766,12 +805,24 @@ function RestTimerOverlay({ duration, onDone, onSkip }) {
             <span className="text-4xl font-bold tabular-nums" style={{ color }}>{fmt}</span>
           </div>
         </div>
-        <button
-          onClick={onSkip}
-          className="mt-6 px-5 py-2.5 bg-bg-2 hover:bg-bg-3 text-white text-sm font-semibold rounded-full border border-bg-3 flex items-center gap-2"
-        >
-          <SkipForward size={14} /> Skip rest
-        </button>
+        <div className="mt-6 flex items-center gap-2">
+          <button
+            onClick={onTogglePause}
+            className={`px-5 py-2.5 text-sm font-semibold rounded-full border flex items-center gap-2 ${
+              isPaused
+                ? 'bg-warn/15 border-warn/40 text-warn'
+                : 'bg-bg-2 hover:bg-bg-3 border-bg-3 text-white'
+            }`}
+          >
+            {isPaused ? <><Play size={14} /> Resume</> : <><Pause size={14} /> Pause</>}
+          </button>
+          <button
+            onClick={onSkip}
+            className="px-5 py-2.5 bg-bg-2 hover:bg-bg-3 text-white text-sm font-semibold rounded-full border border-bg-3 flex items-center gap-2"
+          >
+            <SkipForward size={14} /> Skip
+          </button>
+        </div>
       </div>
     </div>
   )
@@ -866,6 +917,7 @@ function loadOrBuild(storageKey, exercises, lastByExercise) {
           state: parsed.state,
           currentIdx: parsed.currentIdx || 0,
           startedAt: parsed.startedAt || Date.now(),
+          pause: parsed.pause || { pausedAtMs: null, accumPauseMs: 0 },
         }
       }
     }
@@ -874,7 +926,16 @@ function loadOrBuild(storageKey, exercises, lastByExercise) {
     state: buildFresh(exercises, lastByExercise),
     currentIdx: 0,
     startedAt: Date.now(),
+    pause: { pausedAtMs: null, accumPauseMs: 0 },
   }
+}
+
+/** Pause-aware elapsed milliseconds since startedAt. While paused (pausedAtMs
+ *  is set), the result is constant. Constant-derivation explained inline. */
+function elapsedMs(startedAt, now, pause) {
+  const accum = pause?.accumPauseMs || 0
+  const live = pause?.pausedAtMs ? (now - pause.pausedAtMs) : 0
+  return Math.max(0, now - startedAt - accum - live)
 }
 
 function buildFresh(exercises, lastByExercise) {

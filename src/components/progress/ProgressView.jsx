@@ -1,30 +1,49 @@
 // src/components/progress/ProgressView.jsx
-// Per-exercise progress from the Google Sheet. All weights in kg.
-// List of exercises → tap one → max-weight line chart + volume line chart
-// + session history table.
+// Three-level navigation:
+//   1. Muscle groups overview (Chest, Back, Shoulders, ...) with counts
+//   2. Exercises within the selected muscle group
+//   3. Detail: max-weight + volume line charts + session history
+//
+// "All exercises" stays available as an alternative flat view at the top.
+// Muscle-group lookup uses program.js → muscleGroupFor(), which falls back
+// to keyword heuristics for legacy or sheet-only exercise names.
 
 import React, { useMemo, useState } from 'react'
 import {
   TrendingUp, Trophy, Search, ArrowLeft, RefreshCw, AlertCircle,
+  Layers, ChevronRight, List,
 } from 'lucide-react'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts'
 import { useSheetData } from '../../lib/useSheetData'
 import { toISODate, isConfigured } from '../../lib/settings'
+import { muscleGroupFor, MUSCLE_GROUP_LIST } from '../../lib/program'
 
+// View modes: 'groups' | 'exercises' | 'detail' | 'all'
 export default function ProgressView() {
   const { rows, loading, error, refresh } = useSheetData()
+  const [mode, setMode] = useState('groups')
+  const [selectedGroup, setSelectedGroup] = useState(null)
+  const [selectedExercise, setSelectedExercise] = useState(null)
   const [query, setQuery] = useState('')
-  const [selected, setSelected] = useState(null)
 
   const byExercise = useMemo(() => buildByExercise(rows), [rows])
-  const exercises = useMemo(() => {
-    const list = Object.keys(byExercise)
-      .map(name => ({ name, ...summarize(byExercise[name]) }))
+  const summarized = useMemo(() => {
+    const list = Object.keys(byExercise).map(name => ({
+      name,
+      muscleGroup: muscleGroupFor(name) || 'Other',
+      ...summarize(byExercise[name]),
+    }))
     list.sort((a, b) => b.lastDateMs - a.lastDateMs)
     return list
   }, [byExercise])
+
+  const groupCounts = useMemo(() => {
+    const counts = {}
+    for (const ex of summarized) counts[ex.muscleGroup] = (counts[ex.muscleGroup] || 0) + 1
+    return counts
+  }, [summarized])
 
   if (!isConfigured()) {
     return (
@@ -35,7 +54,6 @@ export default function ProgressView() {
       />
     )
   }
-
   if (error && !rows.length) {
     return (
       <EmptyState
@@ -46,8 +64,7 @@ export default function ProgressView() {
       />
     )
   }
-
-  if (!exercises.length && !loading) {
+  if (!summarized.length && !loading) {
     return (
       <EmptyState
         icon={<TrendingUp size={28} className="text-txt-muted" />}
@@ -57,27 +74,54 @@ export default function ProgressView() {
     )
   }
 
-  const filtered = query.trim()
-    ? exercises.filter(e => e.name.toLowerCase().includes(query.toLowerCase()))
-    : exercises
-
-  if (selected) {
+  // Detail
+  if (mode === 'detail' && selectedExercise) {
     return (
       <ExerciseDetail
-        name={selected}
-        sessions={byExercise[selected] || []}
-        onBack={() => setSelected(null)}
+        name={selectedExercise}
+        sessions={byExercise[selectedExercise] || {}}
+        onBack={() => setMode(selectedGroup ? 'exercises' : 'all')}
       />
     )
   }
 
+  // Exercises within a muscle group
+  if (mode === 'exercises' && selectedGroup) {
+    const list = summarized.filter(e => e.muscleGroup === selectedGroup)
+    return (
+      <ExerciseListView
+        title={selectedGroup}
+        exercises={list}
+        query={query}
+        onQuery={setQuery}
+        onBack={() => { setMode('groups'); setSelectedGroup(null); setQuery('') }}
+        onSelect={(name) => { setSelectedExercise(name); setMode('detail') }}
+      />
+    )
+  }
+
+  // Flat "all exercises" view
+  if (mode === 'all') {
+    return (
+      <ExerciseListView
+        title="All Exercises"
+        exercises={summarized}
+        query={query}
+        onQuery={setQuery}
+        onBack={() => { setMode('groups'); setQuery('') }}
+        onSelect={(name) => { setSelectedExercise(name); setSelectedGroup(null); setMode('detail') }}
+      />
+    )
+  }
+
+  // Default: muscle groups overview
   return (
     <div className="flex-1 overflow-y-auto pb-24">
       <div className="px-4 pt-5 pb-3 flex items-start justify-between gap-2">
         <div>
           <h1 className="text-xl font-bold text-white">Progress</h1>
           <p className="text-xs text-txt-secondary mt-0.5">
-            {exercises.length} exercise{exercises.length !== 1 ? 's' : ''} tracked
+            {summarized.length} exercise{summarized.length !== 1 ? 's' : ''} tracked across {Object.keys(groupCounts).length} muscle groups
           </p>
         </div>
         <button
@@ -90,22 +134,82 @@ export default function ProgressView() {
       </div>
 
       <div className="px-4 mb-3">
+        <button
+          onClick={() => { setMode('all'); setQuery('') }}
+          className="w-full flex items-center gap-2 bg-bg-1 border border-bg-3 rounded-xl px-4 py-2.5 text-left hover:border-accent/40"
+        >
+          <List size={14} className="text-txt-muted" />
+          <span className="text-sm text-white font-medium flex-1">All Exercises</span>
+          <span className="text-[11px] text-txt-muted">{summarized.length}</span>
+          <ChevronRight size={14} className="text-txt-muted" />
+        </button>
+      </div>
+
+      <div className="px-4 space-y-1.5">
+        {MUSCLE_GROUP_LIST.concat(['Other']).map(g => {
+          const count = groupCounts[g] || 0
+          if (!count) return null
+          const top = summarized.filter(e => e.muscleGroup === g).slice(0, 3).map(e => e.name).join(' · ')
+          return (
+            <button
+              key={g}
+              onClick={() => { setSelectedGroup(g); setMode('exercises') }}
+              className="w-full flex items-center gap-3 bg-bg-1 border border-bg-3 rounded-xl px-4 py-3 text-left hover:border-accent/40"
+            >
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${groupColor(g)}`}>
+                <Layers size={16} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="font-semibold text-white text-[14px]">{g}</p>
+                <p className="text-[11px] text-txt-muted mt-0.5 truncate">{top || `${count} exercise${count !== 1 ? 's' : ''}`}</p>
+              </div>
+              <span className="text-[11px] text-txt-muted">{count}</span>
+              <ChevronRight size={14} className="text-txt-muted" />
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// ─── List view (used for both per-group and "all") ──────────────
+
+function ExerciseListView({ title, exercises, query, onQuery, onBack, onSelect }) {
+  const filtered = query.trim()
+    ? exercises.filter(e => e.name.toLowerCase().includes(query.toLowerCase()))
+    : exercises
+
+  return (
+    <div className="flex-1 flex flex-col min-h-0">
+      <div className="flex items-center gap-2 px-4 py-2.5 bg-bg-1 border-b border-bg-3 flex-shrink-0">
+        <button onClick={onBack} className="p-1 -ml-1 text-txt-secondary hover:text-white" aria-label="Back">
+          <ArrowLeft size={20} />
+        </button>
+        <div className="flex-1 min-w-0">
+          <div className="text-[10px] text-txt-muted uppercase tracking-wider">Muscle group</div>
+          <div className="text-white font-bold text-sm truncate">{title}</div>
+        </div>
+        <span className="text-[11px] text-txt-muted whitespace-nowrap">{exercises.length}</span>
+      </div>
+
+      <div className="flex-shrink-0 px-4 py-3">
         <div className="flex items-center gap-2 bg-bg-1 border border-bg-3 rounded-xl px-3 py-2.5">
           <Search size={15} className="text-txt-muted" />
           <input
             value={query}
-            onChange={e => setQuery(e.target.value)}
+            onChange={e => onQuery(e.target.value)}
             placeholder="Search exercises..."
             className="flex-1 bg-transparent text-sm text-white placeholder-txt-muted focus:outline-none"
           />
         </div>
       </div>
 
-      <div className="px-4 space-y-1.5">
+      <div className="flex-1 overflow-y-auto px-4 pb-24 space-y-1.5">
         {filtered.map(e => (
           <button
             key={e.name}
-            onClick={() => setSelected(e.name)}
+            onClick={() => onSelect(e.name)}
             className="w-full flex items-center justify-between bg-bg-1 border border-bg-3 rounded-xl px-4 py-3 text-left hover:border-accent/40"
           >
             <div className="min-w-0 flex-1">
@@ -124,6 +228,7 @@ export default function ProgressView() {
                 <p className="text-[11px] text-txt-muted mt-0.5">{fmtNum(e.lastMax)} kg last</p>
               )}
             </div>
+            <ChevronRight size={14} className="text-txt-muted ml-2" />
           </button>
         ))}
       </div>
@@ -131,16 +236,15 @@ export default function ProgressView() {
   )
 }
 
-// ─── Detail ────────────────────────────────────────────────────
+// ─── Detail (charts) ───────────────────────────────────────────
 
 function ExerciseDetail({ name, sessions, onBack }) {
-  // sessions = { [iso]: rows[] }
   const isoList = Object.keys(sessions).sort()
   const points = isoList.map(iso => {
-    const rows = sessions[iso]
-    const weights = rows.map(r => Number(r.weight_kg)).filter(n => !Number.isNaN(n))
+    const sets = sessions[iso]
+    const weights = sets.map(r => Number(r.weight_kg)).filter(n => !Number.isNaN(n))
     const maxWeight = weights.length ? Math.max(...weights) : 0
-    const volume = rows.reduce((sum, r) => {
+    const volume = sets.reduce((sum, r) => {
       const w = Number(r.weight_kg) || 0
       const rp = Number(r.reps) || 0
       return sum + w * rp
@@ -150,21 +254,16 @@ function ExerciseDetail({ name, sessions, onBack }) {
       date: isoToShort(iso),
       weight: maxWeight,
       volume: Math.round(volume),
-      sets: rows.length,
+      sets: sets.length,
     }
   })
 
   const pr = points.length ? Math.max(...points.map(p => p.weight)) : null
-  const last = points[points.length - 1]
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
       <div className="flex items-center gap-2 px-4 py-2.5 bg-bg-1 border-b border-bg-3 flex-shrink-0">
-        <button
-          onClick={onBack}
-          className="p-1 -ml-1 text-txt-secondary hover:text-white"
-          aria-label="Back"
-        >
+        <button onClick={onBack} className="p-1 -ml-1 text-txt-secondary hover:text-white" aria-label="Back">
           <ArrowLeft size={20} />
         </button>
         <div className="flex-1 min-w-0">
@@ -221,20 +320,10 @@ function ChartCard({ title, dataKey, stroke, data }) {
           <XAxis dataKey="date" tick={{ fill: '#5A5A5A', fontSize: 11 }} axisLine={false} tickLine={false} />
           <YAxis tick={{ fill: '#5A5A5A', fontSize: 11 }} axisLine={false} tickLine={false} />
           <Tooltip
-            contentStyle={{
-              background: '#161616', border: '1px solid #303030',
-              borderRadius: 8, color: '#fff', fontSize: 12,
-            }}
+            contentStyle={{ background: '#161616', border: '1px solid #303030', borderRadius: 8, color: '#fff', fontSize: 12 }}
             cursor={{ stroke: '#303030' }}
           />
-          <Line
-            type="monotone"
-            dataKey={dataKey}
-            stroke={stroke}
-            strokeWidth={2}
-            dot={{ fill: stroke, r: 3 }}
-            activeDot={{ r: 5 }}
-          />
+          <Line type="monotone" dataKey={dataKey} stroke={stroke} strokeWidth={2} dot={{ fill: stroke, r: 3 }} activeDot={{ r: 5 }} />
         </LineChart>
       </ResponsiveContainer>
     </div>
@@ -257,7 +346,6 @@ function EmptyState({ icon, title, subtitle, action }) {
 // ─── Data ──────────────────────────────────────────────────────
 
 function buildByExercise(rows) {
-  // exercise → { iso: rows[] }
   const out = {}
   for (const r of rows) {
     if (!r.exercise || !r.date) continue
@@ -280,8 +368,7 @@ function summarize(sessionsObj) {
     }
   }
   const lastIso = isoList[isoList.length - 1]
-  const lastRows = sessionsObj[lastIso]
-  const lastWeights = lastRows.map(r => Number(r.weight_kg)).filter(n => !Number.isNaN(n))
+  const lastWeights = sessionsObj[lastIso].map(r => Number(r.weight_kg)).filter(n => !Number.isNaN(n))
   const lastMax = lastWeights.length ? Math.max(...lastWeights) : null
   const [y, m, d] = lastIso.split('-').map(Number)
   return {
@@ -311,6 +398,21 @@ function isoToShort(iso) {
 function fmtNum(v) {
   if (v == null || v === '') return '—'
   const n = Number(v)
-  if (Number.isNaN(n)) return String(v)
-  return Number.isInteger(n) ? String(n) : String(n)
+  return Number.isNaN(n) ? String(v) : String(n)
+}
+
+function groupColor(g) {
+  switch (g) {
+    case 'Chest':         return 'bg-accent/15 text-accent-light'
+    case 'Back':          return 'bg-success/15 text-success'
+    case 'Shoulders':     return 'bg-warn/15 text-warn'
+    case 'Biceps':        return 'bg-accent/15 text-accent-light'
+    case 'Triceps':       return 'bg-success/15 text-success'
+    case 'Forearms':      return 'bg-warn/15 text-warn'
+    case 'Legs':          return 'bg-success/15 text-success'
+    case 'Calves/Shins':  return 'bg-success/15 text-success'
+    case 'Core':          return 'bg-accent/15 text-accent-light'
+    case 'Conditioning':  return 'bg-warn/15 text-warn'
+    default:              return 'bg-bg-2 text-txt-secondary'
+  }
 }

@@ -56,6 +56,10 @@ const DEFAULTS = {
   // User-set baseline weight for suggestions (overrides program defaults)
   recalibratedWeights: {},                  // { [exerciseName]: { weight, isoDate } }
 
+  // User-added workouts and extra exercises
+  customWorkouts: {},                       // { [name]: { title, duration, phase, exercises: [...] } }
+  customExercises: {},                      // { [workoutType]: [exercise, ...] } — appended to builtin
+
   stateVersion: STATE_VERSION,
 }
 
@@ -84,6 +88,8 @@ export function getSettings() {
       dismissedSuggestions: { ...(parsed.dismissedSuggestions || {}) },
       overrideTracking: { ...(parsed.overrideTracking || {}) },
       recalibratedWeights: { ...(parsed.recalibratedWeights || {}) },
+      customWorkouts: { ...(parsed.customWorkouts || {}) },
+      customExercises: { ...(parsed.customExercises || {}) },
       stateVersion: STATE_VERSION,
     }
   } catch {
@@ -282,4 +288,83 @@ export function toISODate(d) {
   const m = String(d.getMonth() + 1).padStart(2, '0')
   const day = String(d.getDate()).padStart(2, '0')
   return `${y}-${m}-${day}`
+}
+
+// ─── Custom workouts / exercises ───────────────────────────────
+
+export function getCustomWorkouts() {
+  return getSettings().customWorkouts || {}
+}
+
+export function getCustomExercises() {
+  return getSettings().customExercises || {}
+}
+
+export function addCustomWorkout(workout) {
+  // workout: { name, title, duration, phase, exercises: [] }
+  if (!workout?.name) return
+  const cur = getSettings()
+  return setSettings({
+    customWorkouts: {
+      ...cur.customWorkouts,
+      [workout.name]: {
+        title: workout.title || workout.name,
+        duration: workout.duration || '~45 min',
+        phase: workout.phase || 'original',
+        exercises: workout.exercises || [],
+      },
+    },
+  })
+}
+
+export function deleteCustomWorkout(name) {
+  const cur = getSettings()
+  const next = { ...cur.customWorkouts }
+  delete next[name]
+  return setSettings({ customWorkouts: next })
+}
+
+export function addCustomExercise(workoutType, exercise) {
+  // exercise: { name, sets, reps, weight, group, category, muscleGroup, note }
+  if (!workoutType || !exercise?.name) return
+  const cur = getSettings()
+  // If the workout is custom (not in PROGRAM), append to its exercises
+  // directly. Otherwise append to customExercises[workoutType].
+  if (cur.customWorkouts[workoutType]) {
+    return setSettings({
+      customWorkouts: {
+        ...cur.customWorkouts,
+        [workoutType]: {
+          ...cur.customWorkouts[workoutType],
+          exercises: [...(cur.customWorkouts[workoutType].exercises || []), exercise],
+        },
+      },
+    })
+  }
+  return setSettings({
+    customExercises: {
+      ...cur.customExercises,
+      [workoutType]: [...(cur.customExercises[workoutType] || []), exercise],
+    },
+  })
+}
+
+export function deleteCustomExercise(workoutType, exerciseName) {
+  const cur = getSettings()
+  // Try custom workout first
+  if (cur.customWorkouts[workoutType]) {
+    const filtered = (cur.customWorkouts[workoutType].exercises || [])
+      .filter(e => e.name !== exerciseName)
+    return setSettings({
+      customWorkouts: {
+        ...cur.customWorkouts,
+        [workoutType]: { ...cur.customWorkouts[workoutType], exercises: filtered },
+      },
+    })
+  }
+  // Otherwise pull from customExercises[workoutType]
+  const filtered = (cur.customExercises[workoutType] || []).filter(e => e.name !== exerciseName)
+  return setSettings({
+    customExercises: { ...cur.customExercises, [workoutType]: filtered },
+  })
 }
