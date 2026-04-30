@@ -1,7 +1,8 @@
 import React, { useMemo, useState } from 'react'
-import { ChevronLeft, ChevronRight, Settings as SettingsIcon, Pencil, Check, RefreshCw, Heart, Activity } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Settings as SettingsIcon, Pencil, Check, RefreshCw, Heart, Activity, Play } from 'lucide-react'
 import { getSettings, workoutTypeForDate, toISODate, isConfigured, activePhase } from '../../lib/settings'
 import { useSheetData, rowsByDate, lastSessionForType } from '../../lib/useSheetData'
+import { getPausedSessions } from '../../lib/sessionState'
 import useAppStore from '../../store/useAppStore'
 import SettingsModal from '../settings/SettingsModal'
 import DayAssignSheet from './DayAssignSheet'
@@ -25,6 +26,9 @@ export default function CalendarHome() {
 
   const { rows, loading, error, refresh } = useSheetData()
   const byDate = useMemo(() => rowsByDate(rows), [rows])
+  // localStorage isn't reactive; recompute every render — cheap (a handful
+  // of keys, microseconds). Currently-active view re-renders cover us.
+  const pausedSessions = getPausedSessions()
 
   // Build 6×7 grid
   const grid = useMemo(() => buildMonthGrid(cursor), [cursor])
@@ -142,6 +146,7 @@ export default function CalendarHome() {
           const hasData = !!byDate[iso]?.length
           const isToday = iso === toISODate(new Date())
           const isSelected = iso === selectedISO
+          const isPaused = !!pausedSessions[iso]
           return (
             <DayCell
               key={iso}
@@ -149,6 +154,7 @@ export default function CalendarHome() {
               inMonth={inMonth}
               workoutType={wt}
               hasData={hasData}
+              isPaused={isPaused}
               isToday={isToday}
               isSelected={isSelected}
               editMode={editMode}
@@ -169,6 +175,7 @@ export default function CalendarHome() {
           selectedISO={selectedISO}
           workoutType={selectedWorkout}
           loggedRows={byDate[selectedISO] || []}
+          pausedSession={pausedSessions[selectedISO] || null}
         />
       </div>
 
@@ -182,7 +189,7 @@ export default function CalendarHome() {
 }
 
 // ─── Day cell ───────────────────────────────────────────────────────
-function DayCell({ date, inMonth, workoutType, hasData, isToday, isSelected, editMode, onClick }) {
+function DayCell({ date, inMonth, workoutType, hasData, isPaused, isToday, isSelected, editMode, onClick }) {
   const tint = tintForType(workoutType)
   return (
     <button
@@ -191,7 +198,7 @@ function DayCell({ date, inMonth, workoutType, hasData, isToday, isSelected, edi
         inMonth ? tint.bg : 'bg-bg-1/40'
       } ${isSelected ? 'ring-2 ring-accent' : ''} ${
         editMode && inMonth ? 'ring-1 ring-accent/40' : ''
-      }`}
+      } ${isPaused && inMonth ? 'ring-1 ring-warn/60' : ''}`}
     >
       <span className={`text-sm font-semibold ${inMonth ? 'text-white' : 'text-txt-muted'} ${
         isToday ? 'text-accent' : ''
@@ -203,15 +210,18 @@ function DayCell({ date, inMonth, workoutType, hasData, isToday, isSelected, edi
           {shortType(workoutType)}
         </span>
       )}
-      {hasData && (
-        <span className="absolute bottom-1 w-1.5 h-1.5 rounded-full bg-success" />
+      {(hasData || isPaused) && (
+        <div className="absolute bottom-1 flex gap-0.5">
+          {hasData && <span className="w-1.5 h-1.5 rounded-full bg-success" />}
+          {isPaused && <span className="w-1.5 h-1.5 rounded-full bg-warn animate-pulse" />}
+        </div>
       )}
     </button>
   )
 }
 
 // ─── Selected day card ──────────────────────────────────────────────
-function SelectedDayCard({ selectedISO, workoutType, loggedRows }) {
+function SelectedDayCard({ selectedISO, workoutType, loggedRows, pausedSession }) {
   const openQuickLog = useAppStore(s => s.openQuickLog)
   const startGuidedSession = useAppStore(s => s.startGuidedSession)
   const date = isoToDate(selectedISO)
@@ -245,7 +255,15 @@ function SelectedDayCard({ selectedISO, workoutType, loggedRows }) {
         <p className="text-txt-secondary text-sm mt-3">Rest day. Recover.</p>
       ) : (
         <>
-          {hasLog ? (
+          {pausedSession && (
+            <div className="mt-3 flex items-center gap-2 bg-warn/10 border border-warn/30 rounded-lg px-3 py-2 text-warn">
+              <Play size={13} />
+              <div className="text-[11px] flex-1">
+                <span className="font-bold">PAUSED</span> · {pausedSession.totalLogged} of {pausedSession.totalPlanned} sets logged · ready to resume
+              </div>
+            </div>
+          )}
+          {hasLog && !pausedSession && (
             <div className="mt-3 space-y-1">
               <div className="text-xs text-txt-muted">
                 {setCount} sets logged · {uniqueExercises.length} exercises
@@ -255,7 +273,8 @@ function SelectedDayCard({ selectedISO, workoutType, loggedRows }) {
                 {uniqueExercises.length > 4 && ` +${uniqueExercises.length - 4}`}
               </div>
             </div>
-          ) : (
+          )}
+          {!hasLog && !pausedSession && (
             <p className="text-txt-muted text-sm mt-3">No sets logged yet.</p>
           )}
 
@@ -268,9 +287,17 @@ function SelectedDayCard({ selectedISO, workoutType, loggedRows }) {
             </button>
             <button
               onClick={() => startGuidedSession(selectedISO)}
-              className="flex-1 bg-accent hover:bg-accent-dark text-white text-sm font-semibold rounded-lg py-2.5"
+              className={`flex-1 text-white text-sm font-semibold rounded-lg py-2.5 flex items-center justify-center gap-1.5 ${
+                pausedSession
+                  ? 'bg-warn hover:opacity-90 shadow-lg shadow-warn/30'
+                  : 'bg-accent hover:bg-accent-dark'
+              }`}
             >
-              Start Session
+              {pausedSession ? (
+                <><Play size={14} /> Resume Session</>
+              ) : (
+                <>Start Session</>
+              )}
             </button>
           </div>
         </>

@@ -16,7 +16,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowLeft, ChevronLeft, ChevronRight, Check, SkipForward,
   Flag, Loader2, Trash2, Plus, AlertCircle, CheckCircle2, Timer,
-  Sparkles, TrendingUp, X, Pause, Play,
+  Sparkles, TrendingUp, X, Pause, Play, BookmarkCheck,
 } from 'lucide-react'
 import { exercisesFor, titleFor, phaseFor } from '../../lib/program'
 import {
@@ -316,6 +316,61 @@ export default function GuidedSession() {
     endGuidedSession()
   }
 
+  // Save & Continue Later — commits logged sets to the sheet for
+  // durability, freezes the workout clock, leaves localStorage intact so
+  // the session is resumable from the calendar.
+  const [pausing, setPausing] = useState(false)
+  const handleSaveAndContinue = async () => {
+    setPausing(true)
+    setResult(null)
+
+    // Engage the timer pause if not already paused, so the clock freezes
+    // while the user is away.
+    const newPause = pause.pausedAtMs == null
+      ? { pausedAtMs: Date.now(), accumPauseMs: pause.accumPauseMs }
+      : pause
+    setPause(newPause)
+    try {
+      localStorage.setItem(
+        storageKey,
+        JSON.stringify({ state, currentIdx, startedAt, pause: newPause })
+      )
+    } catch {}
+
+    // Commit any logged sets to the sheet so they survive iOS evicting
+    // localStorage while the user is away.
+    const flat = []
+    for (const ex of state) {
+      ex.sets.forEach((st, i) => {
+        if (!st.logged) return
+        flat.push({
+          date: sessionISO,
+          workout_type: workoutType,
+          exercise: ex.exerciseName,
+          set_num: i + 1,
+          weight_kg: toNum(st.weight_kg),
+          reps: toNum(st.reps),
+          rpe: toNum(st.rpe),
+          notes: st.notes || '',
+        })
+      })
+    }
+
+    if (flat.length) {
+      try {
+        await saveSessionBatch(flat)
+        refresh()
+      } catch (e) {
+        setResult({ ok: false, error: 'Couldn\'t commit to sheet: ' + e.message + ' — your progress is safe locally though.' })
+        setPausing(false)
+        return
+      }
+    }
+
+    setPausing(false)
+    endGuidedSession()
+  }
+
   const fmt = date.toLocaleDateString(undefined, {
     weekday: 'short', month: 'short', day: 'numeric',
   })
@@ -486,34 +541,50 @@ export default function GuidedSession() {
       </div>
 
       {/* Sticky footer */}
-      <div className="flex-shrink-0 px-3 py-3 bg-bg-1 border-t border-bg-3 flex gap-2">
-        {allLoggedOnCurrent && !isLast ? (
+      <div className="flex-shrink-0 px-3 py-3 bg-bg-1 border-t border-bg-3 space-y-2">
+        {totalLogged > 0 && (
           <button
-            onClick={goNext}
-            className="flex-1 bg-accent hover:bg-accent-dark text-white font-semibold rounded-xl py-3 flex items-center justify-center gap-2"
+            onClick={handleSaveAndContinue}
+            disabled={pausing || finishing}
+            className="w-full bg-warn/10 hover:bg-warn/20 disabled:opacity-40 text-warn font-semibold rounded-lg py-2 flex items-center justify-center gap-2 border border-warn/30 text-[13px]"
           >
-            Next Exercise <ChevronRight size={18} />
-          </button>
-        ) : isLast ? (
-          <button
-            onClick={handleFinish}
-            disabled={finishing || totalLogged === 0}
-            className="flex-1 bg-success hover:opacity-90 disabled:opacity-40 text-white font-semibold rounded-xl py-3 flex items-center justify-center gap-2 shadow-lg shadow-success/20"
-          >
-            {finishing ? (
-              <><Loader2 size={18} className="animate-spin" /> Saving…</>
+            {pausing ? (
+              <><Loader2 size={14} className="animate-spin" /> Saving progress…</>
             ) : (
-              <><Flag size={18} /> Finish & Save ({totalLogged})</>
+              <><BookmarkCheck size={14} /> Save & continue later ({totalLogged} sets)</>
             )}
           </button>
-        ) : (
-          <button
-            onClick={goNext}
-            className="flex-1 bg-bg-2 hover:bg-bg-3 text-txt-secondary font-semibold rounded-xl py-3 flex items-center justify-center gap-2 border border-bg-3"
-          >
-            Skip to Next <ChevronRight size={18} />
-          </button>
         )}
+
+        <div className="flex gap-2">
+          {allLoggedOnCurrent && !isLast ? (
+            <button
+              onClick={goNext}
+              className="flex-1 bg-accent hover:bg-accent-dark text-white font-semibold rounded-xl py-3 flex items-center justify-center gap-2"
+            >
+              Next Exercise <ChevronRight size={18} />
+            </button>
+          ) : isLast ? (
+            <button
+              onClick={handleFinish}
+              disabled={finishing || totalLogged === 0}
+              className="flex-1 bg-success hover:opacity-90 disabled:opacity-40 text-white font-semibold rounded-xl py-3 flex items-center justify-center gap-2 shadow-lg shadow-success/20"
+            >
+              {finishing ? (
+                <><Loader2 size={18} className="animate-spin" /> Saving…</>
+              ) : (
+                <><Flag size={18} /> Finish & Save ({totalLogged})</>
+              )}
+            </button>
+          ) : (
+            <button
+              onClick={goNext}
+              className="flex-1 bg-bg-2 hover:bg-bg-3 text-txt-secondary font-semibold rounded-xl py-3 flex items-center justify-center gap-2 border border-bg-3"
+            >
+              Skip to Next <ChevronRight size={18} />
+            </button>
+          )}
+        </div>
       </div>
 
       {rest && (
