@@ -21,6 +21,7 @@ import {
 import { useSheetData } from '../../lib/useSheetData'
 import { toISODate, isConfigured } from '../../lib/settings'
 import { muscleGroupFor, MUSCLE_GROUP_LIST } from '../../lib/program'
+import MuscleMap from './MuscleMap'
 
 const COMPOUND_LIFTS = [
   'Bench Press', 'Back Squat', 'Romanian Deadlift',
@@ -103,7 +104,18 @@ export default function ProgressView() {
       </div>
 
       <div className="flex-1 overflow-y-auto pb-24">
-        {tab === 'strengths' && <StrengthsTab summarized={summarized} byExercise={byExercise} rows={rows} />}
+        {tab === 'strengths' && (
+          <StrengthsTab
+            summarized={summarized}
+            byExercise={byExercise}
+            rows={rows}
+            onSelectGroup={(g) => {
+              setTab('exercises')
+              setExerciseMode('list')
+              setSelectedGroup(g)
+            }}
+          />
+        )}
         {tab === 'exercises' && (
           <ExercisesTabRouter
             mode={exerciseMode} setMode={setExerciseMode}
@@ -137,7 +149,7 @@ function TabButton({ active, onClick, icon, label }) {
 
 // ─── 1. STRENGTHS ───────────────────────────────────────────────
 
-function StrengthsTab({ summarized, byExercise, rows }) {
+function StrengthsTab({ summarized, byExercise, rows, onSelectGroup }) {
   const stats = useMemo(() => computeMonthStats(rows), [rows])
   const compounds = useMemo(() => {
     return COMPOUND_LIFTS
@@ -167,6 +179,9 @@ function StrengthsTab({ summarized, byExercise, rows }) {
 
   return (
     <div className="px-4 space-y-4">
+      {/* Body map */}
+      <MuscleMap onSelectGroup={onSelectGroup} />
+
       {/* Stats overview */}
       <div className="grid grid-cols-2 gap-2">
         <StatCard icon={<CalendarIcon size={14} className="text-accent-light" />} label="Sessions this month" value={stats.sessions} />
