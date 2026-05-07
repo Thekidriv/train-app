@@ -1,56 +1,87 @@
 // src/components/progress/MuscleMap.jsx
-// Anatomical muscle map using react-body-highlighter (MIT licensed,
-// ~70KB gzipped). The package ships with realistic anterior/posterior
-// SVG illustrations and named clickable muscle regions.
+// Anatomical muscle map with marketing-grade interaction polish.
 //
-// We keep the 3D card-flip animation: anterior face on the front,
-// posterior on the back, parent rotates 180° to switch.
+// Built on react-body-highlighter (MIT licensed). The package renders
+// muscle regions as <polygon> elements with inline fill colors. We:
+//   1. Give each muscle group its own brand color via the frequency trick
+//      (each group has a unique frequency, indexing into highlightedColors).
+//   2. Add CSS transitions for smooth hover-glow and click-depression
+//      feedback. CSS targets `.muscle-map svg.rbh polygon` and uses
+//      filter + transform for the effects (fill stays inline-managed by
+//      the package, but filter brightens/saturates it on hover and dims
+//      it on active).
 //
-// On click, the package's named muscles map back to the app's broader
-// muscle-group taxonomy (Chest, Back, Shoulders, ...) and the parent's
-// onSelectGroup callback fires — same drill-through behavior as before.
+// The 3D card-flip animation around the body is preserved.
 
 import React, { useState } from 'react'
 import { RotateCw } from 'lucide-react'
 import Model from 'react-body-highlighter'
 
-// Map our app's muscle groups → the muscle names react-body-highlighter
-// understands. Trapezius is grouped with Back since most "back" lifts
-// (rows, deadlifts, pull-ups) hit traps.
-const GROUP_MUSCLES = {
-  Chest:          ['chest'],
-  Back:           ['upper-back', 'lower-back', 'trapezius'],
-  Shoulders:      ['front-deltoids', 'back-deltoids'],
-  Biceps:         ['biceps'],
-  Triceps:        ['triceps'],
-  Forearms:       ['forearm'],
-  Core:           ['abs', 'obliques'],
-  Legs:           ['quadriceps', 'hamstring', 'gluteal', 'adductor', 'abductors'],
-  'Calves/Shins': ['calves', 'left-soleus', 'right-soleus'],
-}
+// Each entry maps an app-level muscle group → the package's named muscles
+// + a brand color + an explicit frequency. The frequency is the trick:
+// it's the index into highlightedColors that determines the muscle's tint.
+const GROUPS = [
+  { name: 'Chest',         muscles: ['chest'],                                                  color: '#FF6B6B' },
+  { name: 'Back',          muscles: ['upper-back', 'lower-back', 'trapezius'],                  color: '#4ECDC4' },
+  { name: 'Shoulders',     muscles: ['front-deltoids', 'back-deltoids'],                        color: '#FFD93D' },
+  { name: 'Biceps',        muscles: ['biceps'],                                                 color: '#A78BFA' },
+  { name: 'Triceps',       muscles: ['triceps'],                                                color: '#F472B6' },
+  { name: 'Forearms',      muscles: ['forearm'],                                                color: '#FB923C' },
+  { name: 'Core',          muscles: ['abs', 'obliques'],                                        color: '#60A5FA' },
+  { name: 'Legs',          muscles: ['quadriceps', 'hamstring', 'gluteal', 'adductor', 'abductors'], color: '#34D399' },
+  { name: 'Calves/Shins',  muscles: ['calves', 'left-soleus', 'right-soleus'],                  color: '#22D3EE' },
+]
+
+// Build data with unique frequencies (1..N) so each muscle group gets a
+// distinct color from highlightedColors[frequency - 1].
+const DATA = GROUPS.map((g, i) => ({
+  name: g.name,
+  muscles: g.muscles,
+  frequency: i + 1,
+}))
+
+const HIGHLIGHTED_COLORS = GROUPS.map(g => g.color)
+const BODY_COLOR = '#2A2A2A'  // bg-3-ish so the silhouette has presence
 
 // Reverse lookup: muscle name → group name
 const MUSCLE_TO_GROUP = (() => {
   const m = {}
-  for (const [group, muscles] of Object.entries(GROUP_MUSCLES)) {
-    for (const muscle of muscles) m[muscle] = group
-  }
+  for (const g of GROUPS) for (const muscle of g.muscles) m[muscle] = g.name
   return m
 })()
 
-// All muscles flattened, fed as one data entry per group so they all
-// render in the highlighted color.
-const DATA = Object.entries(GROUP_MUSCLES).map(([group, muscles]) => ({
-  name: group,
-  muscles,
-}))
-
-const HIGHLIGHTED_COLORS = ['#4F86F7']  // brand accent
-const BODY_COLOR = '#272727'            // matches bg-3 — body has subtle silhouette
+// CSS shipped inline (scoped via .muscle-map prefix). Keeping it here
+// avoids polluting global stylesheets and makes the effects local to
+// this component.
+const STYLE = `
+.muscle-map svg.rbh polygon {
+  cursor: pointer;
+  transform-origin: center;
+  transform-box: fill-box;
+  transition:
+    filter 220ms cubic-bezier(0.4, 0, 0.2, 1),
+    transform 160ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+.muscle-map svg.rbh polygon:hover {
+  filter:
+    brightness(1.18)
+    saturate(1.15)
+    drop-shadow(0 0 6px rgba(255, 255, 255, 0.35));
+}
+.muscle-map svg.rbh polygon:active {
+  filter: brightness(0.6) saturate(0.85);
+  transform: scale(0.95);
+  transition:
+    filter 80ms ease-out,
+    transform 80ms ease-out;
+}
+.muscle-map .flip-card {
+  transition: transform 600ms cubic-bezier(0.4, 0.2, 0.2, 1);
+}
+`
 
 export default function MuscleMap({ onSelectGroup }) {
   const [showBack, setShowBack] = useState(false)
-  const [hovered, setHovered] = useState(null)
 
   const handleMuscleClick = ({ muscle }) => {
     const group = MUSCLE_TO_GROUP[muscle]
@@ -58,14 +89,16 @@ export default function MuscleMap({ onSelectGroup }) {
   }
 
   return (
-    <div className="bg-bg-1 border border-bg-3 rounded-2xl p-4">
+    <div className="muscle-map bg-bg-1 border border-bg-3 rounded-2xl p-4">
+      <style>{STYLE}</style>
+
       <div className="flex items-center justify-between mb-2">
         <p className="text-[10px] uppercase tracking-widest text-txt-muted font-bold">
           Body Map · {showBack ? 'Back' : 'Front'}
         </p>
         <button
-          onClick={() => { setShowBack(b => !b); setHovered(null) }}
-          className="flex items-center gap-1.5 text-[11px] bg-bg-2 hover:bg-bg-3 border border-bg-3 text-white rounded-full px-2.5 py-1 font-semibold"
+          onClick={() => setShowBack(b => !b)}
+          className="flex items-center gap-1.5 text-[11px] bg-bg-2 hover:bg-bg-3 active:scale-95 border border-bg-3 text-white rounded-full px-2.5 py-1 font-semibold transition-transform"
           aria-label="Flip body view"
         >
           <RotateCw size={11} />
@@ -75,12 +108,11 @@ export default function MuscleMap({ onSelectGroup }) {
 
       <div className="flex justify-center" style={{ perspective: '1200px' }}>
         <div
-          className="relative w-full max-w-[260px] mx-auto"
+          className="flip-card relative w-full max-w-[260px] mx-auto"
           style={{
             aspectRatio: '1 / 2',
             transformStyle: 'preserve-3d',
             transform: showBack ? 'rotateY(180deg)' : 'rotateY(0deg)',
-            transition: 'transform 600ms cubic-bezier(0.4, 0.2, 0.2, 1)',
           }}
         >
           {/* Front face — anatomical anterior view */}
@@ -102,7 +134,7 @@ export default function MuscleMap({ onSelectGroup }) {
               svgStyle={{ height: '100%', width: '100%' }}
             />
           </div>
-          {/* Back face — anatomical posterior view, pre-rotated 180° */}
+          {/* Back face — pre-rotated 180° so it reads correctly after flip */}
           <div
             className="absolute inset-0 flex justify-center"
             style={{
@@ -125,10 +157,21 @@ export default function MuscleMap({ onSelectGroup }) {
         </div>
       </div>
 
-      <div className="text-center mt-2 h-5">
-        <span className="text-[11px] text-txt-muted">
-          Tap a muscle to see its progress
-        </span>
+      {/* Color legend */}
+      <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 justify-center">
+        {GROUPS.map(g => (
+          <div key={g.name} className="flex items-center gap-1 text-[10px] text-txt-muted">
+            <span
+              className="w-2 h-2 rounded-sm"
+              style={{ background: g.color }}
+            />
+            {g.name}
+          </div>
+        ))}
+      </div>
+
+      <div className="text-center mt-2 h-4">
+        <span className="text-[11px] text-txt-muted">Tap a muscle to drill in</span>
       </div>
     </div>
   )
