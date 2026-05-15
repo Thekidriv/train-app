@@ -123,12 +123,12 @@ function doPost(e) {
       rows.forEach(r => {
         const idx = existing.findIndex(x => keyOf(x) === keyOf(r));
         if (idx >= 0) {
+          // Preserve original timestamp — re-saving must not overwrite when
+          // the row was first logged. Only update fields the client provided.
           const rowNum = idx + 2; // +1 header, +1 1-indexed
           headers.forEach((h, i) => {
-            if (h === 'timestamp') {
-              sheet.getRange(rowNum, i + 1).setValue(new Date().toISOString());
-              existing[idx][h] = new Date().toISOString();
-            } else if (r[h] !== undefined) {
+            if (h === 'timestamp') return;
+            if (r[h] !== undefined) {
               sheet.getRange(rowNum, i + 1).setValue(r[h]);
               existing[idx][h] = r[h];
             }
