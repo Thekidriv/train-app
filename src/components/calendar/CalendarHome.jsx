@@ -251,10 +251,15 @@ function SelectedDayCard({ selectedISO, workoutType, loggedRows, pausedSession }
         </div>
       </div>
 
-      {isRest ? (
+      {(isRest && !hasLog && !pausedSession) ? (
         <p className="text-txt-secondary text-sm mt-3">Rest day. Recover.</p>
       ) : (
         <>
+          {isRest && (
+            <p className="text-[11px] text-txt-muted italic mt-3">
+              Scheduled as Rest — but logged data exists here.
+            </p>
+          )}
           {pausedSession && (
             <div className="mt-3 flex items-center gap-2 bg-warn/10 border border-warn/30 rounded-lg px-3 py-2 text-warn">
               <Play size={13} />
