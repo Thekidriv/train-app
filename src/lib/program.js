@@ -25,7 +25,7 @@
 // `trial: true` flags a movement as "verify no pain on first log" — see
 // trialStatus in settings.js for state. `unit` is for time-based moves.
 
-export const WORKOUT_TYPES_ORIGINAL = ['Upper A', 'Lower A', 'Upper B', 'Lower B', 'Rest']
+export const WORKOUT_TYPES_ORIGINAL = ['Upper A', 'Lower A', 'Upper B', 'Lower B', 'Calisthenics Push', 'Calisthenics Pull', 'Rest']
 export const WORKOUT_TYPES_RECOVERY = [
   'Upper A - Until Recovery',
   'Recovery + Core A - Until Recovery',
@@ -179,7 +179,97 @@ export const PROGRAM = {
       { name: 'Side Plank', sets: 3, reps: 30, weight: 0, group: 'Superset D — Core', category: 'time', unit: 'seconds', muscleGroup: 'Core', note: '30s/side. Log SECONDS.' },
     ],
   },
+
+  // ─── CALISTHENICS (opt-in, original phase) ─────────────────────
+  // These two workouts live alongside the 4-day split. They are NOT in the
+  // default weekly pattern — swap them in via Settings → patterns to use.
+  // Exercise names match the EXERCISE_LIBRARY and reuse names from the main
+  // program where possible, so PR history is automatically shared.
+
+  'Calisthenics Push': {
+    title: 'Calisthenics Push — Chest, Shoulders, Triceps',
+    duration: '~35 min',
+    phase: 'original',
+    exercises: [
+      { name: 'Push-Ups', sets: 4, reps: 0, weight: 0, group: 'Main', category: 'amrap', muscleGroup: 'Chest', note: 'AMRAP. Beat last + 1.' },
+      { name: 'Dips', sets: 4, reps: 0, weight: 0, group: 'Main', category: 'amrap', muscleGroup: 'Triceps', note: 'AMRAP. Strict, full ROM.' },
+      { name: 'Pike Push-Ups', sets: 3, reps: 0, weight: 0, group: 'Superset A', category: 'amrap', muscleGroup: 'Shoulders', note: 'AMRAP. Hips high.' },
+      { name: 'Archer Push-Ups', sets: 3, reps: 8, weight: 0, group: 'Superset A', category: 'amrap', muscleGroup: 'Chest', note: '8/side. Slow.' },
+      { name: 'Diamond Push-Ups', sets: 3, reps: 0, weight: 0, group: 'Superset B', category: 'amrap', muscleGroup: 'Triceps', note: 'AMRAP. Elbows tight.' },
+      { name: 'Plank', sets: 3, reps: 45, weight: 0, group: 'Superset B', category: 'time', unit: 'seconds', muscleGroup: 'Core', note: 'Bodyweight. Log SECONDS in reps.' },
+    ],
+  },
+
+  'Calisthenics Pull': {
+    title: 'Calisthenics Pull — Back, Biceps, Core',
+    duration: '~35 min',
+    phase: 'original',
+    exercises: [
+      { name: 'Pull-Ups', sets: 4, reps: 0, weight: 0, group: 'Main', category: 'amrap', muscleGroup: 'Back', note: 'AMRAP. Beat last + 1.' },
+      { name: 'Chin-Ups', sets: 4, reps: 0, weight: 0, group: 'Main', category: 'amrap', muscleGroup: 'Back', note: 'AMRAP. Supinated grip.' },
+      { name: 'Inverted Rows', sets: 3, reps: 10, weight: 0, group: 'Superset A', category: 'amrap', muscleGroup: 'Back', note: 'Bar at hip height. Squeeze.' },
+      { name: 'Hanging Leg Raises', sets: 3, reps: 8, weight: 0, group: 'Superset A', category: 'amrap', muscleGroup: 'Core', note: 'Strict, no swing.' },
+      { name: 'Dead Hangs', sets: 3, reps: 0, weight: 0, group: 'Superset B', category: 'time', unit: 'seconds', muscleGroup: 'Forearms', note: 'Max time. Log SECONDS in reps.' },
+      { name: 'Hollow Hold', sets: 3, reps: 30, weight: 0, group: 'Superset B', category: 'time', unit: 'seconds', muscleGroup: 'Core', note: 'Log SECONDS in reps.' },
+    ],
+  },
 }
+
+// ─── Exercise library ──────────────────────────────────────────
+// Tap-to-add presets shown in the "Add exercise" modal. Each entry is a
+// full exercise template with the right category for the suggestion engine.
+// Names match builtin workouts where possible so PR history auto-shares.
+//
+// `section` is the top-level grouping (Calisthenics / Equipment).
+// `group` is the secondary heading shown under each section.
+
+export const EXERCISE_LIBRARY = [
+  // ─── CALISTHENICS ────────────────────────────────────────────
+  // Push
+  { section: 'Calisthenics', name: 'Push-Ups',         sets: 3, reps: 0,  weight: 0, group: 'Push',   category: 'amrap', muscleGroup: 'Chest',     note: 'AMRAP. Strict, chest to floor.' },
+  { section: 'Calisthenics', name: 'Diamond Push-Ups', sets: 3, reps: 0,  weight: 0, group: 'Push',   category: 'amrap', muscleGroup: 'Triceps',   note: 'Hands form diamond, elbows tight.' },
+  { section: 'Calisthenics', name: 'Archer Push-Ups',  sets: 3, reps: 8,  weight: 0, group: 'Push',   category: 'amrap', muscleGroup: 'Chest',     note: '8/side. Slow, full reach.' },
+  { section: 'Calisthenics', name: 'Pike Push-Ups',    sets: 3, reps: 0,  weight: 0, group: 'Push',   category: 'amrap', muscleGroup: 'Shoulders', note: 'Hips high, head between hands.' },
+  { section: 'Calisthenics', name: 'Dips',             sets: 3, reps: 0,  weight: 0, group: 'Push',   category: 'amrap', muscleGroup: 'Triceps',   note: 'Parallel bars or rings. Full ROM.' },
+  // Pull
+  { section: 'Calisthenics', name: 'Pull-Ups',         sets: 3, reps: 0,  weight: 0, group: 'Pull',   category: 'amrap', muscleGroup: 'Back',      note: 'Bodyweight max reps. Strict.' },
+  { section: 'Calisthenics', name: 'Chin-Ups',         sets: 3, reps: 0,  weight: 0, group: 'Pull',   category: 'amrap', muscleGroup: 'Back',      note: 'Supinated grip. Strict.' },
+  { section: 'Calisthenics', name: 'Inverted Rows',    sets: 3, reps: 10, weight: 0, group: 'Pull',   category: 'amrap', muscleGroup: 'Back',      note: 'Bar at hip height. Squeeze.' },
+  { section: 'Calisthenics', name: 'Dead Hangs',       sets: 3, reps: 0,  weight: 0, group: 'Pull',   category: 'time',  unit: 'seconds', muscleGroup: 'Forearms', note: 'Max time. Log SECONDS in reps.' },
+  // Legs
+  { section: 'Calisthenics', name: 'Pistol Squats',                sets: 3, reps: 5,  weight: 0, group: 'Legs', category: 'amrap', muscleGroup: 'Legs', note: '5/leg. Heel down, no collapse.' },
+  { section: 'Calisthenics', name: 'Bulgarian Split Squats (BW)',  sets: 3, reps: 10, weight: 0, group: 'Legs', category: 'amrap', muscleGroup: 'Legs', note: '10/leg. Rear foot elevated.' },
+  { section: 'Calisthenics', name: 'Jumping Lunges',               sets: 3, reps: 10, weight: 0, group: 'Legs', category: 'amrap', muscleGroup: 'Legs', note: '10/leg. Soft landings.' },
+  // Core
+  { section: 'Calisthenics', name: 'L-Sit',              sets: 3, reps: 0,  weight: 0, group: 'Core', category: 'time',  unit: 'seconds', muscleGroup: 'Core', note: 'Max time. Log SECONDS in reps.' },
+  { section: 'Calisthenics', name: 'Plank',              sets: 3, reps: 30, weight: 0, group: 'Core', category: 'time',  unit: 'seconds', muscleGroup: 'Core', note: 'Bodyweight. Log SECONDS in reps.' },
+  { section: 'Calisthenics', name: 'Hollow Hold',        sets: 3, reps: 30, weight: 0, group: 'Core', category: 'time',  unit: 'seconds', muscleGroup: 'Core', note: 'Lower back pressed flat. Log SECONDS.' },
+  { section: 'Calisthenics', name: 'Hanging Leg Raises', sets: 3, reps: 8,  weight: 0, group: 'Core', category: 'amrap', muscleGroup: 'Core', note: 'Strict, no swing.' },
+
+  // ─── EQUIPMENT (Dumbbell / Rope / Machine) ─────────────────────
+  // Default weights are starting points — tweak before saving.
+  // Names that match the main program will auto-share PR history.
+
+  // Dumbbell
+  { section: 'Equipment', name: 'Incline DB Press',           sets: 4, reps: 8,  weight: 20,   group: 'Dumbbell',     category: 'main',      muscleGroup: 'Chest',     note: '3s eccentric, full stretch.' },
+  { section: 'Equipment', name: 'Seated DB Shoulder Press',   sets: 4, reps: 8,  weight: 17.5, group: 'Dumbbell',     category: 'main',      muscleGroup: 'Shoulders', note: '+1kg/DB when clean.' },
+  { section: 'Equipment', name: 'Chest-Supported DB Row',     sets: 3, reps: 10, weight: 25,   group: 'Dumbbell',     category: 'accessory', muscleGroup: 'Back',      note: '1s squeeze, wrist neutral.' },
+  { section: 'Equipment', name: 'DB Lateral Raise',           sets: 3, reps: 14, weight: 7,    group: 'Dumbbell',     category: 'accessory', muscleGroup: 'Shoulders', note: 'Pinky up, no momentum.' },
+  { section: 'Equipment', name: 'Hammer Curls',               sets: 3, reps: 11, weight: 12.5, group: 'Dumbbell',     category: 'accessory', muscleGroup: 'Biceps',    note: 'Strict, wrist neutral.' },
+  { section: 'Equipment', name: 'DB Goblet Squat',            sets: 3, reps: 10, weight: 20,   group: 'Dumbbell',     category: 'accessory', muscleGroup: 'Legs',      note: 'Heels down, chest up.' },
+  // Cable / Rope
+  { section: 'Equipment', name: 'Cable Curl',                 sets: 4, reps: 10, weight: 25,   group: 'Cable / Rope', category: 'accessory', muscleGroup: 'Biceps',    note: 'Constant tension.' },
+  { section: 'Equipment', name: 'Tricep Pushdown',            sets: 4, reps: 12, weight: 25,   group: 'Cable / Rope', category: 'accessory', muscleGroup: 'Triceps',   note: 'Rope attachment. Full ROM.' },
+  { section: 'Equipment', name: 'Cable Face Pull',            sets: 3, reps: 14, weight: 30,   group: 'Cable / Rope', category: 'accessory', muscleGroup: 'Shoulders', note: 'Elbows high, pull to forehead.' },
+  { section: 'Equipment', name: 'Cable Crunch',               sets: 3, reps: 13, weight: 50,   group: 'Cable / Rope', category: 'accessory', muscleGroup: 'Core',      note: 'Kneel, elbows to knees.' },
+  { section: 'Equipment', name: 'Cable Woodchopper',          sets: 3, reps: 12, weight: 20,   group: 'Cable / Rope', category: 'accessory', muscleGroup: 'Core',      note: '12/side. Rotational, controlled.' },
+  // Machine
+  { section: 'Equipment', name: 'Lat Pulldown',               sets: 4, reps: 8,  weight: 50,   group: 'Machine',      category: 'main',      muscleGroup: 'Back',      note: '+2.5kg when clean.' },
+  { section: 'Equipment', name: 'Leg Press',                  sets: 4, reps: 10, weight: 100,  group: 'Machine',      category: 'main',      muscleGroup: 'Legs',      note: 'Full ROM, knees track toes.' },
+  { section: 'Equipment', name: 'Leg Curl',                   sets: 3, reps: 12, weight: 25,   group: 'Machine',      category: 'accessory', muscleGroup: 'Legs',      note: 'Lying or seated.' },
+  { section: 'Equipment', name: 'Leg Extension',              sets: 3, reps: 12, weight: 30,   group: 'Machine',      category: 'accessory', muscleGroup: 'Legs',      note: '1s pause at top.' },
+  { section: 'Equipment', name: 'Pec Deck',                   sets: 3, reps: 12, weight: 30,   group: 'Machine',      category: 'accessory', muscleGroup: 'Chest',     note: '1s squeeze at midline.' },
+]
 
 // ─── Custom content (user-added) ───────────────────────────────
 // Custom workouts and extra exercises live in localStorage (settings.js).

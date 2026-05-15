@@ -12,6 +12,7 @@ import {
 import {
   PROGRAM, WORKOUT_TYPES_ORIGINAL, WORKOUT_TYPES_RECOVERY,
   workoutTypesInPhase, exercisesFor, titleFor, phaseFor, MUSCLE_GROUP_LIST,
+  EXERCISE_LIBRARY,
 } from '../../lib/program'
 import {
   workoutTypeForDate, toISODate, activePhase, getTrialStatus,
@@ -326,6 +327,8 @@ function NewWorkoutModal({ defaultPhase, onCancel, onSave }) {
 // ─── New Exercise modal ────────────────────────────────────────
 
 function NewExerciseModal({ existingGroups, onCancel, onSave }) {
+  // 'library' = tap a preset to prefill; 'custom' = type your own.
+  const [mode, setMode] = useState('library')
   const [name, setName] = useState('')
   const [sets, setSets] = useState('3')
   const [reps, setReps] = useState('10')
@@ -334,6 +337,18 @@ function NewExerciseModal({ existingGroups, onCancel, onSave }) {
   const [category, setCategory] = useState('accessory')
   const [muscleGroup, setMuscleGroup] = useState('Chest')
   const [note, setNote] = useState('')
+
+  const pickFromLibrary = (ex) => {
+    setName(ex.name)
+    setSets(String(ex.sets))
+    setReps(String(ex.reps))
+    setWeight(ex.weight ? String(ex.weight) : '')
+    // Keep the user's destination group; only overwrite if it's the default.
+    setCategory(ex.category)
+    setMuscleGroup(ex.muscleGroup)
+    setNote(ex.note || '')
+    setMode('custom')
+  }
 
   const submit = () => {
     const trimmed = name.trim()
@@ -352,45 +367,134 @@ function NewExerciseModal({ existingGroups, onCancel, onSave }) {
 
   return (
     <ModalShell title="Add Exercise" onCancel={onCancel}>
-      <Field label="Exercise name">
-        <input value={name} onChange={e => setName(e.target.value)}
-               placeholder="e.g. Cable Pull-Through"
-               className="modal-input" autoFocus />
-      </Field>
-      <div className="grid grid-cols-3 gap-2">
-        <Field label="Sets"><input value={sets} onChange={e => setSets(e.target.value)} inputMode="numeric" className="modal-input text-center" /></Field>
-        <Field label="Reps"><input value={reps} onChange={e => setReps(e.target.value)} inputMode="numeric" className="modal-input text-center" /></Field>
-        <Field label="Weight kg"><input value={weight} onChange={e => setWeight(e.target.value)} inputMode="decimal" placeholder="0" className="modal-input text-center" /></Field>
+      <div className="flex gap-1 bg-bg-2 border border-bg-3 rounded-lg p-1 -mt-1">
+        <button
+          type="button"
+          onClick={() => setMode('library')}
+          className={`flex-1 text-xs font-semibold rounded-md py-1.5 transition-colors ${mode === 'library' ? 'bg-accent text-white' : 'text-txt-secondary hover:text-white'}`}
+        >
+          From library
+        </button>
+        <button
+          type="button"
+          onClick={() => setMode('custom')}
+          className={`flex-1 text-xs font-semibold rounded-md py-1.5 transition-colors ${mode === 'custom' ? 'bg-accent text-white' : 'text-txt-secondary hover:text-white'}`}
+        >
+          Custom
+        </button>
       </div>
-      <Field label="Group label (e.g. 'Main', 'Superset A')">
-        <input value={group} onChange={e => setGroup(e.target.value)} className="modal-input" />
-      </Field>
-      <div className="grid grid-cols-2 gap-2">
-        <Field label="Category">
-          <select value={category} onChange={e => setCategory(e.target.value)} className="modal-input">
-            <option value="main">Main lift</option>
-            <option value="weighted-bw">Weighted bodyweight</option>
-            <option value="accessory">Accessory</option>
-            <option value="rehab">Rehab</option>
-            <option value="amrap">AMRAP / Max reps</option>
-            <option value="time">Time hold</option>
-          </select>
-        </Field>
-        <Field label="Muscle group">
-          <select value={muscleGroup} onChange={e => setMuscleGroup(e.target.value)} className="modal-input">
-            {MUSCLE_GROUP_LIST.map(m => (
-              <option key={m} value={m}>{m}</option>
-            ))}
-          </select>
-        </Field>
-      </div>
-      <Field label="Note (optional)">
-        <input value={note} onChange={e => setNote(e.target.value)}
-               placeholder="Coaching cue, tempo, etc."
-               className="modal-input" />
-      </Field>
-      <ModalActions onCancel={onCancel} onSubmit={submit} disabled={!name.trim()} submitLabel="Add" />
+
+      {mode === 'library' ? (
+        <LibraryPicker onPick={pickFromLibrary} />
+      ) : (
+        <>
+          <Field label="Exercise name">
+            <input value={name} onChange={e => setName(e.target.value)}
+                   placeholder="e.g. Cable Pull-Through"
+                   className="modal-input" autoFocus />
+          </Field>
+          <div className="grid grid-cols-3 gap-2">
+            <Field label="Sets"><input value={sets} onChange={e => setSets(e.target.value)} inputMode="numeric" className="modal-input text-center" /></Field>
+            <Field label="Reps"><input value={reps} onChange={e => setReps(e.target.value)} inputMode="numeric" className="modal-input text-center" /></Field>
+            <Field label="Weight kg"><input value={weight} onChange={e => setWeight(e.target.value)} inputMode="decimal" placeholder="0" className="modal-input text-center" /></Field>
+          </div>
+          <Field label="Group label (e.g. 'Main', 'Superset A')">
+            <input value={group} onChange={e => setGroup(e.target.value)} className="modal-input" />
+          </Field>
+          <div className="grid grid-cols-2 gap-2">
+            <Field label="Category">
+              <select value={category} onChange={e => setCategory(e.target.value)} className="modal-input">
+                <option value="main">Main lift</option>
+                <option value="weighted-bw">Weighted bodyweight</option>
+                <option value="accessory">Accessory</option>
+                <option value="rehab">Rehab</option>
+                <option value="amrap">AMRAP / Max reps</option>
+                <option value="time">Time hold</option>
+              </select>
+            </Field>
+            <Field label="Muscle group">
+              <select value={muscleGroup} onChange={e => setMuscleGroup(e.target.value)} className="modal-input">
+                {MUSCLE_GROUP_LIST.map(m => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
+            </Field>
+          </div>
+          <Field label="Note (optional)">
+            <input value={note} onChange={e => setNote(e.target.value)}
+                   placeholder="Coaching cue, tempo, etc."
+                   className="modal-input" />
+          </Field>
+        </>
+      )}
+
+      {mode === 'custom' && (
+        <ModalActions onCancel={onCancel} onSubmit={submit} disabled={!name.trim()} submitLabel="Add" />
+      )}
     </ModalShell>
+  )
+}
+
+function LibraryPicker({ onPick }) {
+  // Two-level grouping: section → group → exercises.
+  const sectioned = useMemo(() => {
+    const out = {}
+    for (const ex of EXERCISE_LIBRARY) {
+      const section = ex.section || 'Other'
+      const group = ex.group || 'Other'
+      ;((out[section] ||= {})[group] ||= []).push(ex)
+    }
+    return out
+  }, [])
+
+  const itemTarget = (ex) => {
+    if (ex.category === 'time') return 'time'
+    if (ex.category === 'amrap') return 'AMRAP'
+    return `${ex.sets}×${ex.reps || '—'}${ex.weight ? ` @ ${ex.weight}kg` : ''}`
+  }
+
+  return (
+    <div className="space-y-4 -mx-1">
+      <p className="text-[11px] text-txt-muted px-1 leading-snug">
+        Tap any movement to prefill the form. Names match the built-in program — your PR history is shared automatically.
+      </p>
+      {Object.entries(sectioned).map(([sectionName, groups]) => (
+        <div key={sectionName}>
+          <div className="text-[11px] font-bold uppercase tracking-wider text-white bg-bg-3/60 px-2 py-1 rounded mb-2">
+            {sectionName}
+          </div>
+          <div className="space-y-3 pl-1">
+            {Object.entries(groups).map(([groupName, items]) => (
+              <div key={groupName}>
+                <div className="text-[10px] font-bold uppercase tracking-wider text-accent-light px-1 mb-1.5">
+                  {groupName}
+                </div>
+                <div className="space-y-1">
+                  {items.map(ex => (
+                    <button
+                      key={ex.name}
+                      type="button"
+                      onClick={() => onPick(ex)}
+                      className="w-full text-left bg-bg-1 border border-bg-3 hover:border-accent/60 rounded-lg px-3 py-2"
+                    >
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className="text-white font-semibold text-sm leading-tight">{ex.name}</span>
+                        <span className="text-[10px] text-txt-muted font-mono whitespace-nowrap">
+                          {itemTarget(ex)}
+                        </span>
+                      </div>
+                      {ex.note && (
+                        <div className="text-[11px] text-txt-muted italic mt-0.5 leading-snug">{ex.note}</div>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
   )
 }
 
@@ -461,11 +565,14 @@ function shortLabel(key) {
   if (/upper b.*until/i.test(key)) return 'UB·R'
   if (/recovery.*core a/i.test(key)) return 'R+A'
   if (/recovery.*core b/i.test(key)) return 'R+B'
+  if (/calisthenics push/i.test(key)) return 'CAL·P'
+  if (/calisthenics pull/i.test(key)) return 'CAL·B'
   return key.split(/\s+/).filter(w => /^[A-Za-z0-9]/.test(w)).map(w => w[0]).join('').toUpperCase().slice(0, 4)
 }
 
 function badge(key) {
   const k = key.toLowerCase()
+  if (k.startsWith('calisthenics')) return 'bg-accent-light/15 text-accent-light'
   if (k.startsWith('upper')) return 'bg-accent/15 text-accent-light'
   if (k.startsWith('lower')) return 'bg-success/15 text-success'
   if (k.startsWith('recovery')) return 'bg-warn/15 text-warn'
