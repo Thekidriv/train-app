@@ -3,11 +3,11 @@
 ## Current state (April 2026) — NO ACTION NEEDED
 
 Your deployed Apps Script at
-`https://script.google.com/macros/s/AKfycbzpwg6ZjjNnJTeQu2iW4CLlMetV4zkgE00DZiovL-1Pvogrowl7KvY9ez2pT3uqFj1k7A/exec`
+`<YOUR_APPS_SCRIPT_URL>` (look it up in script.google.com → Deploy → Manage deployments)
 already supports:
 
 - ✅ JSONP reads (`?callback=fn`) — the React Calendar/History views work today
-- ✅ POST writes with `{ secret: "Lubadon1", date, workout_type, exercise, set_num, weight_kg, reps, rpe, notes }` — one row at a time
+- ✅ POST writes with `{ secret: "<YOUR_PASSWORD>", date, workout_type, exercise, set_num, weight_kg, reps, rpe, notes }` — one row at a time
 
 **The React app has been adapted to match this existing format.** You don't need to redeploy anything for the features shipped so far (Calendar home, Last Session banner, History sheet).
 
@@ -27,7 +27,7 @@ Quick Log saves many rows at once. With the current append-only `doPost`:
 To fix both, replace `doPost` with an upsert-aware version. **Do this only when we're ready to ship Quick Log.** Below is a drop-in replacement — paste this **in addition to keeping your existing `doGet` untouched** (or replace the whole file if you prefer).
 
 ```javascript
-const SHEET_PASSWORD = 'Lubadon1';
+const SHEET_PASSWORD = 'CHANGE_ME_BEFORE_DEPLOY'; // set this to match the password you typed into the app's Settings screen
 
 function doPost(e) {
   try {
