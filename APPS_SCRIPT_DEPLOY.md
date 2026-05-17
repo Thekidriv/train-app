@@ -1,5 +1,7 @@
 # Apps Script — Complete Code.gs
 
+**Version: v2 (lock-wrapped doPost)** — if you previously deployed v1 (no lock), re-paste and redeploy. The lock prevents concurrent writes from producing duplicate rows when a save races with a retry, a double-tap, or two devices saving simultaneously.
+
 This is a **single, complete `Code.gs`** for your train-app Apps Script.
 Paste the whole thing in to get:
 
@@ -7,6 +9,7 @@ Paste the whole thing in to get:
 - ✅ Legacy single-row POST (backward compatible — old clients still work)
 - ✅ **`action: "upsert"`** — re-saving a day **overwrites** rows instead of appending duplicates
 - ✅ **`action: "clean-duplicates"`** — collapses existing duplicate rows in your sheet, keeping the newest timestamp per `(date | workout_type | exercise | set_num)`
+- ✅ **Document lock around every write** — concurrent doPost calls serialize cleanly instead of racing each other into duplicate appends
 
 ## Sheet columns
 
@@ -64,125 +67,138 @@ function doGet(e) {
 
 // ─── WRITE / UPSERT / CLEAN ──────────────────────────────────────
 function doPost(e) {
+  // Serialize writes — without this, two concurrent doPost calls (double-tap,
+  // retry-during-original, two devices) both read the same sheet baseline and
+  // both append, defeating the upsert. Reads (doGet) don't need locking.
+  const lock = LockService.getDocumentLock();
   try {
-    const body = JSON.parse(e.postData.contents || '{}');
-
-    // Accept both "secret" (legacy) and "password" field names
-    const pw = body.secret || body.password;
-    if (pw !== SHEET_PASSWORD) {
-      return ContentService.createTextOutput('unauthorized');
-    }
-
-    const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-    const values = sheet.getDataRange().getValues();
-    const headers = values[0];
-
-    // Helper: build an array in header order
-    const toArray = (r) => headers.map(h => {
-      if (h === 'timestamp') return new Date().toISOString();
-      return r[h] != null ? r[h] : '';
-    });
-
-    // ── Legacy single-row append (no action field) ──
-    if (!body.action && (body.date || body.exercise)) {
-      sheet.appendRow([
-        body.date || '',
-        body.workout_type || '',
-        body.exercise || '',
-        body.set_num || '',
-        body.weight_kg || '',
-        body.reps || '',
-        body.rpe || '',
-        body.notes || '',
-        new Date().toISOString(),
-      ]);
-      return ContentService.createTextOutput('OK');
-    }
-
-    const action = body.action || 'append';
-
-    // ── Append batch ──
-    if (action === 'append') {
-      const rows = body.rows || (body.row ? [body.row] : []);
-      rows.forEach(r => sheet.appendRow(toArray(r)));
-      return _json({ ok: true, appended: rows.length });
-    }
-
-    // ── Upsert: update if key matches, append otherwise ──
-    if (action === 'upsert') {
-      const rows = body.rows || (body.row ? [body.row] : []);
-      const keyFields = (body.upsertKey || 'date|workout_type|exercise|set_num').split('|');
-
-      // In-memory snapshot of existing rows for fast key matching.
-      const existing = values.slice(1).map(row => {
-        const o = {}; headers.forEach((h, i) => o[h] = row[i]); return o;
-      });
-      const keyOf = o => keyFields.map(f => String(o[f] != null ? o[f] : '')).join('');
-
-      let updated = 0, appended = 0;
-      rows.forEach(r => {
-        const idx = existing.findIndex(x => keyOf(x) === keyOf(r));
-        if (idx >= 0) {
-          // Preserve original timestamp — re-saving must not overwrite when
-          // the row was first logged. Only update fields the client provided.
-          const rowNum = idx + 2; // +1 header, +1 1-indexed
-          headers.forEach((h, i) => {
-            if (h === 'timestamp') return;
-            if (r[h] !== undefined) {
-              sheet.getRange(rowNum, i + 1).setValue(r[h]);
-              existing[idx][h] = r[h];
-            }
-          });
-          updated++;
-        } else {
-          const arr = toArray(r);
-          sheet.appendRow(arr);
-          // Keep `existing` in sync so later rows in same batch dedupe correctly
-          const newRow = {};
-          headers.forEach((h, i) => newRow[h] = arr[i]);
-          existing.push(newRow);
-          appended++;
-        }
-      });
-      return _json({ ok: true, updated, appended });
-    }
-
-    // ── Clean duplicates: collapse rows by key, keep newest timestamp ──
-    if (action === 'clean-duplicates') {
-      const keyFields = (body.dedupeKey || 'date|workout_type|exercise|set_num').split('|');
-      const tsIdx = headers.indexOf('timestamp');
-      const dataRows = values.slice(1);
-
-      const map = new Map();   // key -> { rowNum, ts }
-      const toDelete = [];     // sheet row numbers (1-indexed)
-
-      dataRows.forEach((row, i) => {
-        const rowNum = i + 2;
-        const o = {}; headers.forEach((h, j) => o[h] = row[j]);
-        // Skip rows missing any key field — preserve them
-        if (keyFields.some(f => o[f] === '' || o[f] == null)) return;
-        const k = keyFields.map(f => String(o[f])).join('');
-        const ts = tsIdx >= 0 ? (new Date(row[tsIdx]).getTime() || 0) : 0;
-        const prev = map.get(k);
-        if (!prev) {
-          map.set(k, { rowNum, ts });
-        } else if (ts > prev.ts) {
-          // Newer wins — delete the previous, track this one
-          toDelete.push(prev.rowNum);
-          map.set(k, { rowNum, ts });
-        } else {
-          toDelete.push(rowNum);
-        }
-      });
-
-      // Delete in descending order so row numbers don't shift mid-loop
-      toDelete.sort((a, b) => b - a).forEach(n => sheet.deleteRow(n));
-      return _json({ ok: true, deleted: toDelete.length, kept: map.size });
-    }
-
-    return _json({ ok: false, error: 'unknown action: ' + action });
+    lock.waitLock(30000); // 30s — fail loudly rather than silently racing
   } catch (err) {
-    return _json({ ok: false, error: String(err) });
+    return _json({ ok: false, error: 'Could not acquire lock — try again' });
+  }
+  try {
+    try {
+      const body = JSON.parse(e.postData.contents || '{}');
+  
+      // Accept both "secret" (legacy) and "password" field names
+      const pw = body.secret || body.password;
+      if (pw !== SHEET_PASSWORD) {
+        return ContentService.createTextOutput('unauthorized');
+      }
+  
+      const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+      const values = sheet.getDataRange().getValues();
+      const headers = values[0];
+  
+      // Helper: build an array in header order
+      const toArray = (r) => headers.map(h => {
+        if (h === 'timestamp') return new Date().toISOString();
+        return r[h] != null ? r[h] : '';
+      });
+  
+      // ── Legacy single-row append (no action field) ──
+      if (!body.action && (body.date || body.exercise)) {
+        sheet.appendRow([
+          body.date || '',
+          body.workout_type || '',
+          body.exercise || '',
+          body.set_num || '',
+          body.weight_kg || '',
+          body.reps || '',
+          body.rpe || '',
+          body.notes || '',
+          new Date().toISOString(),
+        ]);
+        return ContentService.createTextOutput('OK');
+      }
+  
+      const action = body.action || 'append';
+  
+      // ── Append batch ──
+      if (action === 'append') {
+        const rows = body.rows || (body.row ? [body.row] : []);
+        rows.forEach(r => sheet.appendRow(toArray(r)));
+        return _json({ ok: true, appended: rows.length });
+      }
+  
+      // ── Upsert: update if key matches, append otherwise ──
+      if (action === 'upsert') {
+        const rows = body.rows || (body.row ? [body.row] : []);
+        const keyFields = (body.upsertKey || 'date|workout_type|exercise|set_num').split('|');
+  
+        // In-memory snapshot of existing rows for fast key matching.
+        const existing = values.slice(1).map(row => {
+          const o = {}; headers.forEach((h, i) => o[h] = row[i]); return o;
+        });
+        const keyOf = o => keyFields.map(f => String(o[f] != null ? o[f] : '')).join('');
+  
+        let updated = 0, appended = 0;
+        rows.forEach(r => {
+          const idx = existing.findIndex(x => keyOf(x) === keyOf(r));
+          if (idx >= 0) {
+            // Preserve original timestamp — re-saving must not overwrite when
+            // the row was first logged. Only update fields the client provided.
+            const rowNum = idx + 2; // +1 header, +1 1-indexed
+            headers.forEach((h, i) => {
+              if (h === 'timestamp') return;
+              if (r[h] !== undefined) {
+                sheet.getRange(rowNum, i + 1).setValue(r[h]);
+                existing[idx][h] = r[h];
+              }
+            });
+            updated++;
+          } else {
+            const arr = toArray(r);
+            sheet.appendRow(arr);
+            // Keep `existing` in sync so later rows in same batch dedupe correctly
+            const newRow = {};
+            headers.forEach((h, i) => newRow[h] = arr[i]);
+            existing.push(newRow);
+            appended++;
+          }
+        });
+        return _json({ ok: true, updated, appended });
+      }
+  
+      // ── Clean duplicates: collapse rows by key, keep newest timestamp ──
+      if (action === 'clean-duplicates') {
+        const keyFields = (body.dedupeKey || 'date|workout_type|exercise|set_num').split('|');
+        const tsIdx = headers.indexOf('timestamp');
+        const dataRows = values.slice(1);
+  
+        const map = new Map();   // key -> { rowNum, ts }
+        const toDelete = [];     // sheet row numbers (1-indexed)
+  
+        dataRows.forEach((row, i) => {
+          const rowNum = i + 2;
+          const o = {}; headers.forEach((h, j) => o[h] = row[j]);
+          // Skip rows missing any key field — preserve them
+          if (keyFields.some(f => o[f] === '' || o[f] == null)) return;
+          const k = keyFields.map(f => String(o[f])).join('');
+          const ts = tsIdx >= 0 ? (new Date(row[tsIdx]).getTime() || 0) : 0;
+          const prev = map.get(k);
+          if (!prev) {
+            map.set(k, { rowNum, ts });
+          } else if (ts > prev.ts) {
+            // Newer wins — delete the previous, track this one
+            toDelete.push(prev.rowNum);
+            map.set(k, { rowNum, ts });
+          } else {
+            toDelete.push(rowNum);
+          }
+        });
+  
+        // Delete in descending order so row numbers don't shift mid-loop
+        toDelete.sort((a, b) => b - a).forEach(n => sheet.deleteRow(n));
+        return _json({ ok: true, deleted: toDelete.length, kept: map.size });
+      }
+  
+      return _json({ ok: false, error: 'unknown action: ' + action });
+    } catch (err) {
+      return _json({ ok: false, error: String(err) });
+    }
+  } finally {
+    lock.releaseLock();
   }
 }
 
