@@ -197,7 +197,11 @@ export default function QuickLog() {
     try {
       const r = await saveSessionBatch(flat)
       setResult({ ...r, total: flat.length })
-      setDirty(false)
+      // Only clear dirty state if every set landed — if the legacy fallback
+      // partially failed, leave Save enabled and surface the failures below.
+      if (r.ok && (!r.failed || r.failed === 0)) {
+        setDirty(false)
+      }
       refresh()
 
       // Update override streaks
@@ -219,6 +223,30 @@ export default function QuickLog() {
           actualWeight: recalCandidate.weight,
         })
       }
+    } catch (e) {
+      setResult({ ok: false, error: e.message })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // Retry just the rows that failed in the previous attempt. saveSessionBatch
+  // is upsert-keyed so re-firing successful rows would be a no-op anyway, but
+  // sending only the failures is faster and makes the result count cleaner.
+  const handleRetryFailed = async () => {
+    if (!result?.failures?.length || saving) return
+    setSaving(true)
+    try {
+      const rows = result.failures.map(f => f.row)
+      const r = await saveSessionBatch(rows)
+      // Merge with the prior attempt's totals so the banner reflects cumulative
+      // progress, not just this retry batch.
+      const succeeded = (result.succeeded || 0) + (r.succeeded || 0)
+      setResult({ ...r, total: result.total, succeeded })
+      if (r.ok && (!r.failed || r.failed === 0)) {
+        setDirty(false)
+      }
+      refresh()
     } catch (e) {
       setResult({ ok: false, error: e.message })
     } finally {
@@ -294,7 +322,31 @@ export default function QuickLog() {
             </div>
           </div>
         )}
-        {result && result.ok === false && (
+        {result && (result.mode === 'legacy' || result.mode === 'legacy-fallback') && result.failed > 0 && (
+          <div className="bg-danger/10 border border-danger/30 rounded-lg px-3 py-2.5 mx-1">
+            <div className="flex items-start gap-2 text-danger text-sm mb-2">
+              <AlertCircle size={16} className="mt-0.5 flex-shrink-0" />
+              <div className="flex-1">
+                Saved {result.succeeded}/{result.total} sets. {result.failed} failed:
+              </div>
+            </div>
+            <ul className="text-[11px] text-danger/90 space-y-0.5 ml-6 mb-2">
+              {(result.failures || []).map((f, i) => (
+                <li key={i}>
+                  Set {f.row?.set_num} of {f.row?.exercise} — {f.error}
+                </li>
+              ))}
+            </ul>
+            <button
+              onClick={handleRetryFailed}
+              disabled={saving}
+              className="ml-6 bg-danger/20 hover:bg-danger/30 disabled:opacity-50 text-danger text-xs font-semibold rounded-md px-3 py-1.5"
+            >
+              {saving ? 'Retrying…' : 'Retry failed sets only'}
+            </button>
+          </div>
+        )}
+        {result && result.ok === false && result.error && (
           <div className="flex items-start gap-2 bg-danger/10 border border-danger/30 rounded-lg px-3 py-2.5 text-danger text-sm mx-1">
             <AlertCircle size={16} className="mt-0.5 flex-shrink-0" />
             <span className="break-all">{result.error}</span>

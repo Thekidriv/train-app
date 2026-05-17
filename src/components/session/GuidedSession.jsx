@@ -289,6 +289,16 @@ export default function GuidedSession() {
     try {
       const r = await saveSessionBatch(flat)
       setResult({ ...r, total: flat.length })
+
+      // If any sets failed in the legacy fallback path, stay on the session
+      // screen so the user sees the failure list and can retry. Don't clear
+      // local storage and don't advance to summary/trial/recal prompts — the
+      // session isn't actually finished yet.
+      const partialFailure = !r.ok || (r.failed && r.failed > 0)
+      if (partialFailure) {
+        return
+      }
+
       try { localStorage.removeItem(storageKey) } catch {}
       refresh()
 
@@ -316,6 +326,28 @@ export default function GuidedSession() {
         loggedRows: flat,
         durationSec: Math.floor(elapsedMs(startedAt, Date.now(), pause) / 1000),
       })
+    } catch (e) {
+      setResult({ ok: false, error: e.message })
+    } finally {
+      setFinishing(false)
+    }
+  }
+
+  // Retry only the rows that failed in the previous handleFinish attempt.
+  // Stays on the session screen; advancing to summary/trial/recal still
+  // requires every row to land cleanly.
+  const handleRetryFailed = async () => {
+    if (!result?.failures?.length || finishing) return
+    setFinishing(true)
+    try {
+      const rows = result.failures.map(f => f.row)
+      const r = await saveSessionBatch(rows)
+      const succeeded = (result.succeeded || 0) + (r.succeeded || 0)
+      setResult({ ...r, total: result.total, succeeded })
+      if (r.ok && (!r.failed || r.failed === 0)) {
+        try { localStorage.removeItem(storageKey) } catch {}
+        refresh()
+      }
     } catch (e) {
       setResult({ ok: false, error: e.message })
     } finally {
@@ -566,7 +598,31 @@ export default function GuidedSession() {
             <div>Session saved. {result.total} sets committed.</div>
           </div>
         )}
-        {result && result.ok === false && (
+        {result && (result.mode === 'legacy' || result.mode === 'legacy-fallback') && result.failed > 0 && (
+          <div className="bg-danger/10 border border-danger/30 rounded-lg px-3 py-2.5">
+            <div className="flex items-start gap-2 text-danger text-sm mb-2">
+              <AlertCircle size={16} className="mt-0.5 flex-shrink-0" />
+              <div className="flex-1">
+                Saved {result.succeeded}/{result.total} sets. {result.failed} failed:
+              </div>
+            </div>
+            <ul className="text-[11px] text-danger/90 space-y-0.5 ml-6 mb-2">
+              {(result.failures || []).map((f, i) => (
+                <li key={i}>
+                  Set {f.row?.set_num} of {f.row?.exercise} — {f.error}
+                </li>
+              ))}
+            </ul>
+            <button
+              onClick={handleRetryFailed}
+              disabled={finishing}
+              className="ml-6 bg-danger/20 hover:bg-danger/30 disabled:opacity-50 text-danger text-xs font-semibold rounded-md px-3 py-1.5"
+            >
+              {finishing ? 'Retrying…' : 'Retry failed sets only'}
+            </button>
+          </div>
+        )}
+        {result && result.ok === false && result.error && (
           <div className="flex items-start gap-2 bg-danger/10 border border-danger/30 rounded-lg px-3 py-2.5 text-danger text-sm">
             <AlertCircle size={16} className="mt-0.5 flex-shrink-0" />
             <span className="break-all">{result.error}</span>
