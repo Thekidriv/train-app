@@ -119,6 +119,42 @@ export default function GuidedSession() {
   // Keep the phone from auto-locking while a session is active.
   useWakeLock(exercises.length > 0)
 
+  // ─── Auto-commit on tab hide ─────────────────────────────────
+  // iOS Safari can evict PWA localStorage under memory pressure. If a
+  // user backgrounds the app mid-session (phone call, app switch),
+  // flush all logged-but-uncommitted sets to the sheet so the work
+  // survives a tab kill. Idempotent — saveSessionBatch upserts on
+  // (date, workout_type, exercise, set_num), so re-firing on every
+  // visibility change can't produce duplicates.
+  useEffect(() => {
+    const commitOnHide = () => {
+      if (document.visibilityState !== 'hidden') return
+      const flat = []
+      for (const ex of state) {
+        ex.sets.forEach((st, i) => {
+          if (!st.logged) return
+          flat.push({
+            date: sessionISO,
+            workout_type: workoutType,
+            exercise: ex.exerciseName,
+            set_num: i + 1,
+            weight_kg: toNum(st.weight_kg),
+            reps: toNum(st.reps),
+            rpe: toNum(st.rpe),
+            notes: st.notes || '',
+          })
+        })
+      }
+      if (!flat.length) return
+      // Fire-and-forget — we're about to be backgrounded, can't await reliably.
+      // Silent failure is acceptable: localStorage still has the data and the
+      // user will see the dirty state on return.
+      saveSessionBatch(flat).catch(() => {})
+    }
+    document.addEventListener('visibilitychange', commitOnHide)
+    return () => document.removeEventListener('visibilitychange', commitOnHide)
+  }, [state, sessionISO, workoutType])
+
   if (!exercises.length) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center px-6 text-center">
