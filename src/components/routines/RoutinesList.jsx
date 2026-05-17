@@ -6,7 +6,7 @@
 
 import React, { useMemo, useState } from 'react'
 import {
-  ChevronRight, ArrowLeft, ClipboardList, Heart, Activity,
+  ChevronRight, ArrowLeft, ClipboardList, Heart, Activity, Zap,
   Plus, Trash2, X,
 } from 'lucide-react'
 import {
@@ -58,6 +58,8 @@ export default function RoutinesList() {
           <p className="text-xs text-txt-secondary">
             {phase === 'until-recovery'
               ? 'Recovery phase — upper-body focus.'
+              : phase === 'strength-mobility'
+              ? 'Strength + Mobility — 4-day BW-focused.'
               : 'Your standard 4-day program.'}
           </p>
         </div>
@@ -317,6 +319,7 @@ function NewWorkoutModal({ defaultPhase, onCancel, onSave }) {
         <select value={phase} onChange={e => setPhase(e.target.value)} className="modal-input">
           <option value="original">Original</option>
           <option value="until-recovery">Until Recovery</option>
+          <option value="strength-mobility">Strength + Mobility</option>
         </select>
       </Field>
       <ModalActions onCancel={onCancel} onSubmit={submit} disabled={!name.trim()} submitLabel="Create" />
@@ -553,6 +556,13 @@ function PhasePill({ phase }) {
       </span>
     )
   }
+  if (phase === 'strength-mobility') {
+    return (
+      <span className="flex items-center gap-1 bg-success/10 border border-success/30 text-success rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider">
+        <Zap size={10} /> Strength + Mobility
+      </span>
+    )
+  }
   return (
     <span className="flex items-center gap-1 bg-accent/10 border border-accent/30 text-accent-light rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider">
       <Activity size={10} /> Original
@@ -567,6 +577,10 @@ function shortLabel(key) {
   if (/recovery.*core b/i.test(key)) return 'R+B'
   if (/calisthenics push/i.test(key)) return 'CAL·P'
   if (/calisthenics pull/i.test(key)) return 'CAL·B'
+  if (/pull \+ posterior/i.test(key)) return 'PUL'
+  if (/push \+ pyramid/i.test(key)) return 'PYR'
+  if (/run \+ mobility/i.test(key)) return 'RUN'
+  if (/full-body stamina/i.test(key)) return 'STA'
   return key.split(/\s+/).filter(w => /^[A-Za-z0-9]/.test(w)).map(w => w[0]).join('').toUpperCase().slice(0, 4)
 }
 
@@ -576,6 +590,7 @@ function badge(key) {
   if (k.startsWith('upper')) return 'bg-accent/15 text-accent-light'
   if (k.startsWith('lower')) return 'bg-success/15 text-success'
   if (k.startsWith('recovery')) return 'bg-warn/15 text-warn'
+  if (/^(pull|push|run|full-body) /.test(k)) return 'bg-success/15 text-success'
   return 'bg-bg-2 text-txt-secondary'
 }
 

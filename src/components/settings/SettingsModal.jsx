@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { X, Save, CheckCircle2, AlertCircle, Trash2, Loader2, Activity, Heart } from 'lucide-react'
+import { X, Save, CheckCircle2, AlertCircle, Trash2, Loader2, Activity, Heart, Zap } from 'lucide-react'
 import {
   getSettings, setSettings, setActivePhase, setPatternEntry,
 } from '../../lib/settings'
@@ -39,11 +39,13 @@ export default function SettingsModal({ open, onClose }) {
 
   const handlePhaseChange = (next) => {
     if (next === phase) return
-    if (!confirm(
+    const message =
       next === 'until-recovery'
         ? 'Switch to "Until Recovery" phase? Your weekly pattern will change to recovery workouts. All historical data is preserved.'
+      : next === 'strength-mobility'
+        ? 'Switch to "Strength + Mobility" phase? Your weekly pattern will change to the 4-day BW-focused program. All historical data is preserved.'
         : 'Switch back to "Original" phase? Your weekly pattern will return to the standard split.'
-    )) return
+    if (!confirm(message)) return
     const updated = setActivePhase(next)
     setPhase(next)
     setPattern({ ...updated.patterns[next] })
@@ -104,7 +106,7 @@ export default function SettingsModal({ open, onClose }) {
             <div className="text-[10px] font-bold uppercase tracking-wider text-txt-muted mb-2">
               Active Phase
             </div>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               <PhaseButton
                 active={phase === 'original'}
                 icon={<Activity size={14} />}
@@ -119,6 +121,13 @@ export default function SettingsModal({ open, onClose }) {
                 sublabel="No lower-body load"
                 onClick={() => handlePhaseChange('until-recovery')}
               />
+              <PhaseButton
+                active={phase === 'strength-mobility'}
+                icon={<Zap size={14} />}
+                label="Strength + Mobility"
+                sublabel="BW-focused 4-day"
+                onClick={() => handlePhaseChange('strength-mobility')}
+              />
             </div>
             <p className="text-[11px] text-txt-muted mt-2 leading-snug">
               Switching is logged with today's date. All historical data is preserved either way.
@@ -128,7 +137,7 @@ export default function SettingsModal({ open, onClose }) {
           {/* ─── PATTERN ───────────────────────────── */}
           <div>
             <div className="text-[10px] font-bold uppercase tracking-wider text-txt-muted mb-2">
-              Weekly Pattern · {phase === 'original' ? 'Original' : 'Until Recovery'}
+              Weekly Pattern · {phase === 'original' ? 'Original' : phase === 'until-recovery' ? 'Until Recovery' : 'Strength + Mobility'}
             </div>
             <div className="space-y-1.5">
               {WEEKDAYS.map((wd, i) => (

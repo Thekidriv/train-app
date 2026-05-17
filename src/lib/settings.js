@@ -5,7 +5,7 @@
 // suggestions, and override-streak tracking for the suggestion engine.
 
 const KEY = 'trainapp:settings:v1'
-const STATE_VERSION = 4
+const STATE_VERSION = 5
 
 const ORIGINAL_PATTERN = {
   0: 'Upper A',      // Sun
@@ -27,15 +27,26 @@ const RECOVERY_PATTERN = {
   6: 'Rest',
 }
 
+const STRENGTH_MOBILITY_PATTERN = {
+  0: 'Pull + Posterior',
+  1: 'Push + Pyramid',
+  2: 'Rest',
+  3: 'Run + Mobility',
+  4: 'Full-Body Stamina',
+  5: 'Rest',
+  6: 'Rest',
+}
+
 const DEFAULTS = {
   appsScriptUrl: '',
   password: '',
 
   // Phase model
-  activePhase: 'original',                  // 'original' | 'until-recovery'
+  activePhase: 'original',                  // 'original' | 'until-recovery' | 'strength-mobility'
   patterns: {                               // weekday → workout_type, per phase
     original: { ...ORIGINAL_PATTERN },
     'until-recovery': { ...RECOVERY_PATTERN },
+    'strength-mobility': { ...STRENGTH_MOBILITY_PATTERN },
   },
   dayOverrides: {},                         // { 'YYYY-MM-DD': workout_type }
 
@@ -81,6 +92,7 @@ export function getSettings() {
       patterns: {
         original: { ...DEFAULTS.patterns.original, ...(parsed.patterns?.original || {}) },
         'until-recovery': { ...DEFAULTS.patterns['until-recovery'], ...(parsed.patterns?.['until-recovery'] || {}) },
+        'strength-mobility': { ...DEFAULTS.patterns['strength-mobility'], ...(parsed.patterns?.['strength-mobility'] || {}) },
       },
       dayOverrides: { ...(parsed.dayOverrides || {}) },
       phaseHistory: Array.isArray(parsed.phaseHistory) ? parsed.phaseHistory : [],
@@ -118,6 +130,7 @@ function migrate(parsed) {
     parsed.patterns = {
       original: { ...DEFAULTS.patterns.original, ...parsed.defaultPattern },
       'until-recovery': { ...DEFAULTS.patterns['until-recovery'] },
+      'strength-mobility': { ...DEFAULTS.patterns['strength-mobility'] },
     }
     delete parsed.defaultPattern
   }
@@ -132,13 +145,21 @@ function migrate(parsed) {
     parsed.recalibratedWeights = parsed.recalibratedWeights || {}
   }
 
+  // v < 5: introduce strength-mobility phase pattern alongside existing two.
+  if (v < 5) {
+    parsed.patterns = parsed.patterns || {}
+    if (!parsed.patterns['strength-mobility']) {
+      parsed.patterns['strength-mobility'] = { ...DEFAULTS.patterns['strength-mobility'] }
+    }
+  }
+
   return parsed
 }
 
 // ─── Phase API ──────────────────────────────────────────────────
 
 export function setActivePhase(phase) {
-  if (phase !== 'original' && phase !== 'until-recovery') return
+  if (phase !== 'original' && phase !== 'until-recovery' && phase !== 'strength-mobility') return
   const cur = getSettings()
   if (cur.activePhase === phase) return cur
   const event = {

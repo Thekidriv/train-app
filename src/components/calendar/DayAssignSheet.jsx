@@ -54,7 +54,11 @@ export default function DayAssignSheet({ iso, onClose }) {
         </div>
 
         <div className="text-[10px] uppercase tracking-wider text-txt-muted mb-2">
-          {phase === 'until-recovery' ? 'Recovery phase choices' : 'Original phase choices'}
+          {phase === 'until-recovery'
+            ? 'Recovery phase choices'
+            : phase === 'strength-mobility'
+            ? 'Strength + Mobility choices'
+            : 'Original phase choices'}
         </div>
 
         <div className="grid grid-cols-1 gap-2">

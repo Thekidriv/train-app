@@ -33,10 +33,18 @@ export const WORKOUT_TYPES_RECOVERY = [
   'Recovery + Core B - Until Recovery',
   'Rest',
 ]
+export const WORKOUT_TYPES_STRENGTH_MOBILITY = [
+  'Pull + Posterior',
+  'Push + Pyramid',
+  'Run + Mobility',
+  'Full-Body Stamina',
+  'Rest',
+]
 // Backwards compatibility — legacy code imports WORKOUT_TYPES.
 export const WORKOUT_TYPES = [
   ...WORKOUT_TYPES_ORIGINAL.filter(t => t !== 'Rest'),
   ...WORKOUT_TYPES_RECOVERY.filter(t => t !== 'Rest'),
+  ...WORKOUT_TYPES_STRENGTH_MOBILITY.filter(t => t !== 'Rest'),
   'Rest',
 ]
 
@@ -180,6 +188,69 @@ export const PROGRAM = {
     ],
   },
 
+  // ─── STRENGTH + MOBILITY PHASE (BW 70/30, 4-day A/B/C/D) ──────
+  // Naming: plural for bodyweight movements, singular for weighted lifts —
+  // matches the existing convention so PR history auto-shares across phases.
+
+  'Pull + Posterior': {
+    title: 'Pull + Posterior — Day A',
+    duration: '~40 min',
+    phase: 'strength-mobility',
+    exercises: [
+      { name: 'Deadlift',            sets: 4, reps: 5,  weight: 80,   group: 'Main',       category: 'main',        muscleGroup: 'Legs',      note: 'Anchor lift. +2.5kg/wk when clean at RPE ≤8.' },
+      { name: 'Weighted Pull-Ups',   sets: 4, reps: 5,  weight: 7.5,  group: 'Main',       category: 'weighted-bw', muscleGroup: 'Back',      note: 'Backpack or DB. +2.5kg every 2 weeks.' },
+      { name: 'Single-Arm DB Row',   sets: 3, reps: 8,  weight: 35,   group: 'Superset A', category: 'accessory',   muscleGroup: 'Back',      note: 'Heavy. RPE 9 on last set.' },
+      { name: 'Lat Pulldown',        sets: 3, reps: 10, weight: 50,   group: 'Superset B', category: 'accessory',   muscleGroup: 'Back' },
+      { name: 'Wrist Curls',         sets: 3, reps: 15, weight: 7.5,  group: 'Superset B', category: 'rehab',       muscleGroup: 'Forearms' },
+      { name: 'Cable Face Pull',     sets: 3, reps: 15, weight: 30,   group: 'Superset C', category: 'accessory',   muscleGroup: 'Shoulders', note: 'Elbows high.' },
+      { name: 'Dead Hangs',          sets: 3, reps: 0,  weight: 0,    group: 'Superset C', category: 'time',        unit: 'seconds', muscleGroup: 'Forearms', note: 'Beat 45s. Log SECONDS in reps column.' },
+    ],
+  },
+
+  'Push + Pyramid': {
+    title: 'Push + Pyramid — Day B',
+    duration: '~35 min',
+    phase: 'strength-mobility',
+    exercises: [
+      { name: 'Bench Press',         sets: 4, reps: 5,  weight: 75,   group: 'Main',            category: 'main',        muscleGroup: 'Chest',     note: '+1.25kg/wk.' },
+      { name: 'Weighted Push-Ups',   sets: 3, reps: 8,  weight: 10,   group: 'Main',            category: 'weighted-bw', muscleGroup: 'Chest',     note: 'Backpack.' },
+      { name: 'DB Lateral Raise',    sets: 3, reps: 12, weight: 7,    group: 'Superset A',      category: 'accessory',   muscleGroup: 'Shoulders' },
+      { name: 'Bodyweight Squats',   sets: 2, reps: 0,  weight: 0,    group: 'Pyramid Ladder',  category: 'amrap',       muscleGroup: 'Legs',      note: 'Pyramid 1→5→1 at level 3. Log total reps.' },
+      { name: 'Push-Ups',            sets: 2, reps: 0,  weight: 0,    group: 'Pyramid Ladder',  category: 'amrap',       muscleGroup: 'Chest',     note: 'Part of ladder.' },
+      { name: 'Inverted Rows',       sets: 2, reps: 0,  weight: 0,    group: 'Pyramid Ladder',  category: 'amrap',       muscleGroup: 'Back',      note: 'Part of ladder.' },
+      { name: 'Pike Push-Ups',       sets: 2, reps: 0,  weight: 0,    group: 'Pyramid Ladder',  category: 'amrap',       muscleGroup: 'Shoulders', note: 'Part of ladder.' },
+      { name: 'Pull-Ups',            sets: 2, reps: 0,  weight: 0,    group: 'Pyramid Ladder',  category: 'amrap',       muscleGroup: 'Back',      note: 'Top of pyramid.' },
+    ],
+  },
+
+  'Run + Mobility': {
+    title: 'Run + Mobility — Day C',
+    duration: '~30 min',
+    phase: 'strength-mobility',
+    exercises: [
+      { name: "Easy Run",                  sets: 1, reps: 0, weight: 0, group: 'Aerobic',  category: 'time', unit: 'seconds', muscleGroup: 'Conditioning', note: '20-25 min Z2. If tibia talks, walk that day.' },
+      { name: "World's Greatest Stretch",  sets: 2, reps: 0, weight: 0, group: 'Mobility', category: 'time', unit: 'seconds', muscleGroup: 'Conditioning', note: '60s/side. Log total seconds.' },
+      { name: 'Couch Stretch',             sets: 2, reps: 0, weight: 0, group: 'Mobility', category: 'time', unit: 'seconds', muscleGroup: 'Legs',         note: '90s/side.' },
+      { name: 'Dead Hangs',                sets: 2, reps: 0, weight: 0, group: 'Mobility', category: 'time', unit: 'seconds', muscleGroup: 'Forearms',     note: '60s decompression.' },
+    ],
+  },
+
+  'Full-Body Stamina': {
+    title: 'Full-Body Stamina — Day D',
+    duration: '~45 min',
+    phase: 'strength-mobility',
+    exercises: [
+      { name: 'Deadlift',          sets: 3, reps: 8,   weight: 65, group: 'Main',           category: 'main',      muscleGroup: 'Legs',      note: 'Volume day. Lighter than Day A.' },
+      { name: 'Pull-Ups AMRAP',    sets: 3, reps: 0,   weight: 0,  group: 'Main',           category: 'amrap',     muscleGroup: 'Back',      note: 'Beat 14+ first set.' },
+      { name: 'Single-Arm DB Press', sets: 3, reps: 8, weight: 20, group: 'Superset A',     category: 'accessory', muscleGroup: 'Shoulders' },
+      { name: 'Walking Lunges',    sets: 3, reps: 20,  weight: 15, group: 'Superset A',     category: 'accessory', muscleGroup: 'Legs',      note: '20 steps total. DBs in each hand.' },
+      { name: 'Push-Ups EMOM',     sets: 1, reps: 60,  weight: 0,  group: 'Finisher EMOM',  category: 'amrap',     muscleGroup: 'Chest',     note: 'EMOM 20: 12 reps min 1. Log total reps.' },
+      { name: 'Pull-Ups EMOM',     sets: 1, reps: 30,  weight: 0,  group: 'Finisher EMOM',  category: 'amrap',     muscleGroup: 'Back',      note: '6 reps min 2. Log total reps.' },
+      { name: 'Squat EMOM',        sets: 1, reps: 100, weight: 0,  group: 'Finisher EMOM',  category: 'amrap',     muscleGroup: 'Legs',      note: '20 reps min 3. Log total reps.' },
+      { name: 'Dead Hangs EMOM',   sets: 1, reps: 150, weight: 0,  group: 'Finisher EMOM',  category: 'time',      unit: 'seconds', muscleGroup: 'Forearms', note: '30s × 5 rounds. Log total SECONDS.' },
+    ],
+  },
+
   // ─── CALISTHENICS (opt-in, original phase) ─────────────────────
   // These two workouts live alongside the 4-day split. They are NOT in the
   // default weekly pattern — swap them in via Settings → patterns to use.
@@ -306,7 +377,7 @@ export function titleFor(workoutType) {
   return workoutType
 }
 
-/** Phase a workout belongs to ('original' | 'until-recovery' | null for Rest). */
+/** Phase a workout belongs to ('original' | 'until-recovery' | 'strength-mobility' | null for Rest). */
 export function phaseFor(workoutType) {
   if (PROGRAM[workoutType]) return PROGRAM[workoutType].phase
   const cw = _getCustomWorkouts()[workoutType]
@@ -315,7 +386,10 @@ export function phaseFor(workoutType) {
 
 /** All workout types for a given phase, in display order. Includes custom. */
 export function workoutTypesInPhase(phase) {
-  const base = phase === 'until-recovery' ? WORKOUT_TYPES_RECOVERY : WORKOUT_TYPES_ORIGINAL
+  let base
+  if (phase === 'until-recovery') base = WORKOUT_TYPES_RECOVERY
+  else if (phase === 'strength-mobility') base = WORKOUT_TYPES_STRENGTH_MOBILITY
+  else base = WORKOUT_TYPES_ORIGINAL
   const customNames = Object.entries(_getCustomWorkouts())
     .filter(([, w]) => (w.phase || 'original') === phase)
     .map(([name]) => name)

@@ -5,7 +5,7 @@
 
 import React, { useMemo, useState } from 'react'
 import {
-  Calendar, ChevronRight, ChevronUp, RefreshCw, Pencil, AlertCircle, Heart, Activity,
+  Calendar, ChevronRight, ChevronUp, RefreshCw, Pencil, AlertCircle, Heart, Activity, Zap,
 } from 'lucide-react'
 import { useSheetData } from '../../lib/useSheetData'
 import { toISODate, isConfigured, getSettings } from '../../lib/settings'
@@ -161,13 +161,22 @@ export default function HistoryView() {
 // ─── Helpers ────────────────────────────────────────────────────
 
 function PhaseChangeChip({ event }) {
-  const Icon = event.to === 'until-recovery' ? Heart : Activity
-  const color = event.to === 'until-recovery' ? 'warn' : 'accent-light'
-  const label = event.to === 'until-recovery'
+  const isRecovery = event.to === 'until-recovery'
+  const isStrengthMobility = event.to === 'strength-mobility'
+  const Icon = isRecovery ? Heart : isStrengthMobility ? Zap : Activity
+  const label = isRecovery
     ? 'Switched to Recovery Phase'
+    : isStrengthMobility
+    ? 'Switched to Strength + Mobility'
     : 'Switched to Original Phase'
+  // Tailwind needs full class strings literally — explicit ternaries beat template interpolation
+  const colorClass = isRecovery
+    ? 'text-warn'
+    : isStrengthMobility
+    ? 'text-success'
+    : 'text-accent-light'
   return (
-    <div className={`flex items-center gap-1.5 px-3 py-1.5 border-b border-bg-3 bg-bg-2/40 text-${color} text-[11px]`}>
+    <div className={`flex items-center gap-1.5 px-3 py-1.5 border-b border-bg-3 bg-bg-2/40 ${colorClass} text-[11px]`}>
       <Icon size={11} />
       <span className="font-semibold">{label}</span>
     </div>

@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react'
-import { ChevronLeft, ChevronRight, Settings as SettingsIcon, Pencil, Check, RefreshCw, Heart, Activity, Play } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Settings as SettingsIcon, Pencil, Check, RefreshCw, Heart, Activity, Play, Zap } from 'lucide-react'
 import { getSettings, workoutTypeForDate, toISODate, isConfigured, activePhase } from '../../lib/settings'
 import { useSheetData, rowsByDate, lastSessionForType } from '../../lib/useSheetData'
 import { getPausedSessions } from '../../lib/sessionState'
@@ -340,6 +340,12 @@ function shortType(t) {
   if (/upper b.*until/i.test(s)) return 'UB·R'
   if (/recovery.*core a/i.test(s)) return 'R+A'
   if (/recovery.*core b/i.test(s)) return 'R+B'
+  if (/calisthenics push/i.test(s)) return 'CAL·P'
+  if (/calisthenics pull/i.test(s)) return 'CAL·B'
+  if (/pull \+ posterior/i.test(s)) return 'PUL'
+  if (/push \+ pyramid/i.test(s)) return 'PYR'
+  if (/run \+ mobility/i.test(s)) return 'RUN'
+  if (/full-body stamina/i.test(s)) return 'STA'
   // Default: first letter of each word, e.g. "Upper A" → "UA"
   return s
     .split(/\s+/)
@@ -355,6 +361,8 @@ function tintForType(t) {
   const s = String(t).toLowerCase()
   if (s.startsWith('upper')) return { bg: 'bg-accent/15', label: 'text-accent-light' }
   if (s.startsWith('lower')) return { bg: 'bg-success/15', label: 'text-success' }
+  // Strength + Mobility days share green tint with Lower days
+  if (/^(pull|push|run|full-body) /.test(s)) return { bg: 'bg-success/15', label: 'text-success' }
   return { bg: 'bg-bg-2', label: 'text-txt-secondary' }
 }
 
@@ -370,6 +378,14 @@ function PhaseBadge({ phase }) {
       <span className="flex items-center gap-1 bg-warn/10 border border-warn/30 text-warn rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider">
         <Heart size={10} />
         Recovery Phase
+      </span>
+    )
+  }
+  if (phase === 'strength-mobility') {
+    return (
+      <span className="flex items-center gap-1 bg-success/10 border border-success/30 text-success rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider">
+        <Zap size={10} />
+        Strength + Mobility
       </span>
     )
   }
